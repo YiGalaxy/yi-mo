@@ -23,8 +23,12 @@ python/venv/
 # ===== IDE =====
 .idea/
 *.iml
-.vscode/
-!.vscode/extensions.json
+# 忽略编辑器的个人配置，但保留团队共享的推荐配置。
+# 注意用 **/.vscode/* 而不是 **/.vscode/ —— 整个目录被忽略后，
+# 否定规则无法再把里面的文件重新包含进来
+**/.vscode/*
+!**/.vscode/extensions.json
+!**/.vscode/settings.json
 
 # ===== 操作系统 =====
 .DS_Store
