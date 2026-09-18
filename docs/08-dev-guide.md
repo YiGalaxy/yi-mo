@@ -3318,51 +3318,413 @@ public TreeResponse tree(@PathVariable String libraryId) {
 
 ## 迭代 3：读章节
 
-**目标**：点树上的章节，右边显示内容。
+### 做完是什么样
+
+点左侧树上的章节，右边显示它的内容。现在还是只读的纯文本，编辑器在下一个迭代。
+
+### 为什么这一步先不做编辑器
+
+编辑器（Tiptap）是**整个项目最容易出问题的部分**——富文本的文档模型、Markdown 双向转换、中文输入法，三个难点叠在一起。
+
+如果现在就把编辑器接进来，一旦显示不对，你分不清是：
+- 接口返回的数据有问题？
+- 解析 Markdown 有问题？
+- 编辑器渲染有问题？
+
+**先用最笨的 `<pre>` 标签把数据链路验证通**，确认「接口返回的正文和文件里的一模一样」，再换编辑器。到那时出问题，就只可能是编辑器自己的锅。
 
 ### 后端
 
+#### 1. 先写 LibraryStorage
+
+读文件这件事会被反复用到（读章节、写章节、做快照、导出……），抽成一个类。
+
+**为什么不让 Service 直接调 `Files.readString`**：
+
+- 读取要指定 UTF-8、要处理异常、要校验路径。这些逻辑散在各处的话，改一处漏一处
+- 将来如果要支持「书库在网盘上」这类场景，只改这一个类
+
+新建 `backend/src/main/java/com/yimo/storage/LibraryStorage.java`：
+
 ```java
-@GetMapping("/api/chapters/{id}")
-public ChapterDetail get(@PathVariable String id) {
-    Chapter ch = chapterMapper.selectById(id);
-    if (ch == null) throw new BizException(ErrorCode.CHAPTER_NOT_FOUND);
+package com.yimo.storage;
 
-    Path file = PathGuard.resolve(libraryStorage.rootOf(ch.getLibraryId()), ch.getRelPath());
-    String raw = libraryStorage.read(file);
-    ParsedMarkdown pm = codec.parse(raw);   // 用磁盘内容，不用数据库缓存
+import com.yimo.common.BizException;
+import com.yimo.common.ErrorCode;
+import com.yimo.domain.Library;
+import com.yimo.mapper.LibraryMapper;
+import org.springframework.stereotype.Component;
 
-    return new ChapterDetail(
-        ch.getId(), ch.getBookName(), ch.getRelPath(),
-        ch.getTitle(), ch.getVolume(), ch.getSortOrder(), ch.getStatus(),
-        ch.getPov(), List.of(), List.of(), ch.getStoryTime(), null,
-        ch.getWordCount(), ch.getContentHash(),
-        pm.body(),                              // 正文
-        ch.getUpdatedAt(), ch.getUpdatedAt()
-    );
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+
+/**
+ * 书库文件的读写。
+ *
+ * <p>所有碰磁盘的操作都从这里走，别的地方不直接调 Files。
+ * 这样「指定 UTF-8」「处理异常」「校验路径」这些事只有一份实现。
+ */
+@Component
+public class LibraryStorage {
+
+    private final LibraryMapper libraryMapper;
+
+    public LibraryStorage(LibraryMapper libraryMapper) {
+        this.libraryMapper = libraryMapper;
+    }
+
+    /** 取书库的根目录 */
+    public Path rootOf(String libraryId) {
+        Library lib = libraryMapper.selectById(libraryId);
+        if (lib == null) {
+            throw new BizException(ErrorCode.LIBRARY_NOT_FOUND);
+        }
+        return Path.of(lib.getPath());
+    }
+
+    /**
+     * 读书库里的文件。
+     *
+     * <p>强制 UTF-8：不指定的话用系统默认编码，Windows 上可能是 GBK，
+     * 读 UTF-8 的稿子会全是乱码。
+     */
+    public String read(Path file) {
+        try {
+            return Files.readString(file, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new BizException(ErrorCode.FILE_READ_FAILED, e.getMessage());
+        }
+    }
+
+    /**
+     * 原子写入。
+     *
+     * <p>先写临时文件再重命名，这是为了防「写到一半断电」——
+     * 直接覆盖原文件的话，中途崩溃会留下一个半截的稿子。
+     * 重命名是操作系统级的原子操作，要么完成要么没发生。
+     */
+    public void writeAtomic(Path target, String content) {
+        try {
+            Path dir = target.getParent();
+            Files.createDirectories(dir);
+
+            // 临时文件必须和目标在同一个目录（同一个磁盘分区），
+            // 否则 ATOMIC_MOVE 会降级成「复制 + 删除」，就不再是原子的了
+            Path tmp = dir.resolve(target.getFileName() + ".tmp");
+            Files.writeString(tmp, content, StandardCharsets.UTF_8);
+
+            Files.move(tmp, target,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+
+        } catch (IOException e) {
+            throw new BizException(ErrorCode.FILE_WRITE_FAILED, e.getMessage());
+        }
+    }
 }
 ```
 
-**注意：正文从文件读，不从数据库读。** 文件是真相源。数据库只存索引元数据。
+**这个类里的 `writeAtomic` 现在还用不到，但下一步就要用。** 先一起写了，因为它和 `read` 是同一个职责。
+
+#### 2. 定义 ChapterDetail
+
+这个 DTO 字段比较多，因为前端渲染一个章节需要这些信息。
+
+新建 `backend/src/main/java/com/yimo/dto/ChapterDetail.java`：
+
+```java
+package com.yimo.dto;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+
+/**
+ * 章节详情。前端的编辑器拿这个来渲染。
+ *
+ * @param bookName   所属书名
+ * @param relPath    相对书库根的路径，前端用它显示面包屑
+ * @param sortOrder  卷内序号
+ * @param pov        视角人物，可为 null
+ * @param characters 出场人物 id 列表
+ * @param locations  出场地点 id 列表
+ * @param storyTime  故事内时间，作者自由填写，可为 null
+ * @param summary    一句话梗概，可为 null
+ * @param contentHash 内容哈希，**保存时必须原样回传**——后端用它检测文件是否被外部改过
+ * @param content    正文，不含 frontmatter
+ */
+public record ChapterDetail(
+        String id,
+        String bookName,
+        String relPath,
+        String title,
+        String volume,
+        Integer sortOrder,
+        String status,
+        String pov,
+        List<String> characters,
+        List<String> locations,
+        String storyTime,
+        String summary,
+        Integer wordCount,
+        String contentHash,
+        String content,
+        OffsetDateTime createdAt,
+        OffsetDateTime updatedAt
+) {
+}
+```
+
+**`contentHash` 这个字段现在是「只传不用」，但要记住它**。下一步保存正文时，前端要把它原样发回来，后端比对不一致就说明「你打开编辑器期间，有别的东西改了这个文件」，于是拒绝写入、弹窗让作者选择。没有它就会静默覆盖掉作者用别的编辑器做的修改。
+
+**`characters` 和 `locations` 现在固定传空列表**，因为实体识别还没做（迭代 4）。先把字段占上，接口的形状定下来，前端可以照常写。
+
+#### 3. 写 Controller
+
+新建 `backend/src/main/java/com/yimo/controller/ChapterController.java`：
+
+```java
+package com.yimo.controller;
+
+import com.yimo.common.BizException;
+import com.yimo.common.ErrorCode;
+import com.yimo.domain.Chapter;
+import com.yimo.dto.ChapterDetail;
+import com.yimo.mapper.ChapterMapper;
+import com.yimo.storage.FrontmatterCodec;
+import com.yimo.storage.LibraryStorage;
+import com.yimo.storage.ParsedMarkdown;
+import com.yimo.storage.PathGuard;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.nio.file.Path;
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/chapters")
+public class ChapterController {
+
+    private final ChapterMapper chapterMapper;
+    private final LibraryStorage storage;
+    private final FrontmatterCodec codec;
+
+    public ChapterController(ChapterMapper chapterMapper,
+                             LibraryStorage storage,
+                             FrontmatterCodec codec) {
+        this.chapterMapper = chapterMapper;
+        this.storage = storage;
+        this.codec = codec;
+    }
+
+    @GetMapping("/{id}")
+    public ChapterDetail get(@PathVariable String id) {
+        // 1. 从数据库拿元数据（标题、序号、卷名这些索引信息）
+        Chapter ch = chapterMapper.selectById(id);
+        if (ch == null) {
+            throw new BizException(ErrorCode.CHAPTER_NOT_FOUND);
+        }
+
+        // 2. 正文从文件读，不从数据库读。
+        //    文件是唯一真相源，数据库只存索引。
+        //    PathGuard 会校验解析出的路径仍在书库目录内，防止 ../ 越界
+        Path file = PathGuard.resolve(storage.rootOf(ch.getLibraryId()), ch.getRelPath());
+        String raw = storage.read(file);
+
+        // 3. 剥掉 frontmatter，只要正文
+        ParsedMarkdown pm = codec.parse(raw);
+
+        return new ChapterDetail(
+                ch.getId(),
+                ch.getBookName(),
+                ch.getRelPath(),
+                ch.getTitle(),
+                ch.getVolume(),
+                ch.getSortOrder(),
+                ch.getStatus(),
+                ch.getPov(),
+                List.of(),      // characters，实体识别做完后才有值
+                List.of(),      // locations，同上
+                ch.getStoryTime(),
+                null,           // summary，迭代 4 生成
+                ch.getWordCount(),
+                ch.getContentHash(),
+                pm.body(),      // ← 正文在这里
+                ch.getUpdatedAt(),
+                ch.getUpdatedAt());
+    }
+}
+```
+
+**为什么这个 Controller 里没有 Service**：现在的逻辑就是「查库 → 读文件 → 拼 DTO」，全是转发，没有业务规则。
+
+如果加了业务规则（比如「未登录不能读」「读一次要记访问日志」），就该抽 Service 了。**不要为了形式而分层**。
 
 ### 前端
 
-先**不做编辑器**，用一个只读的 `<pre>` 显示，验证链路：
+#### 1. 加 API 方法
 
-```vue
-<pre style="white-space: pre-wrap">{{ chapter?.content }}</pre>
+新建 `frontend/src/api/chapter.ts`：
+
+```ts
+import { http } from './http'
+
+/**
+ * 章节详情。
+ *
+ * 字段名和后端 ChapterDetail 一一对应，不能写错——
+ * 后端返回 contentHash，这里写成 content_hash 就会拿到 undefined。
+ */
+export interface ChapterDetail {
+  id: string
+  bookName: string
+  relPath: string
+  title: string
+  volume: string
+  sortOrder: number
+  status: 'draft' | 'revising' | 'done'
+  pov: string | null
+  characters: string[]
+  locations: string[]
+  storyTime: string | null
+  summary: string | null
+  wordCount: number
+  contentHash: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}
+
+export const chapterApi = {
+  get: (id: string) => http.get<unknown, ChapterDetail>(`/chapters/${id}`),
+}
 ```
 
-**先跑通，再加复杂度。** 编辑器是最容易出问题的部分，不要在还没验证数据链路时就去接它。
+#### 2. 写读取页面
 
-### 验证清单
+新建 `frontend/src/views/ChapterView.vue`：
+
+```vue
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { chapterApi, type ChapterDetail } from '@/api/chapter'
+import { toApiError } from '@/api/http'
+
+const route = useRoute()
+
+const chapter = ref<ChapterDetail | null>(null)
+const loading = ref(false)
+const error = ref('')
+
+async function load(id: string) {
+  loading.value = true
+  error.value = ''
+  try {
+    chapter.value = await chapterApi.get(id)
+  } catch (e) {
+    error.value = toApiError(e).message
+    chapter.value = null
+  } finally {
+    loading.value = false
+  }
+}
+
+// watch 而不是 onMounted：地址栏里的 id 变了要重新加载。
+// 用 onMounted 的话，从「第1章」跳到「第2章」页面不会刷新
+watch(
+  () => route.params.id as string,
+  (id) => {
+    if (id) load(id)
+  },
+  { immediate: true },   // immediate 让首次进入也触发
+)
+</script>
+
+<template>
+  <div class="p-6 max-w-3xl mx-auto">
+    <div v-if="loading" class="text-sm text-neutral-500">加载中…</div>
+
+    <div v-else-if="error" class="rounded-lg border border-red-200 bg-red-50 p-4">
+      <p class="text-sm text-red-800">{{ error }}</p>
+    </div>
+
+    <template v-else-if="chapter">
+      <h1 class="text-xl font-medium text-neutral-800 mb-1">{{ chapter.title }}</h1>
+      <p class="text-xs text-neutral-400 mb-6">
+        {{ chapter.bookName }} · {{ chapter.volume }} · {{ chapter.wordCount }} 字
+      </p>
+
+      <!--
+        white-space: pre-wrap 让换行和空格照原样显示。
+        没有它的话，HTML 会把连续的空白折叠成一个空格，
+        段首的全角空格缩进就没了。
+      -->
+      <pre class="whitespace-pre-wrap font-sans text-base leading-loose text-neutral-700">{{ chapter.content }}</pre>
+    </template>
+  </div>
+</template>
+```
+
+**`<pre>` 的 `white-space: pre-wrap` 是关键**。HTML 默认会把连续空白折叠成一个空格，没有这个样式，稿子里段的缩进和空行全都会被吃掉。
+
+### 配置路由
+
+`frontend/src/router/index.ts` 加一条：
+
+```ts
+{
+  path: '/chapters/:id',
+  name: 'chapter',
+  component: () => import('@/views/ChapterView.vue'),
+},
+```
+
+### 验证
+
+**先造点测试数据**——需要一个真实的书库文件夹。
+
+```bash
+mkdir -p "D:/Project/yi-mo/test-library/剑来/07-正文"
+```
+
+新建 `D:/Project/yi-mo/test-library/剑来/07-正文/第001章-雪夜.md`，内容：
+
+```markdown
+---
+title: 第一章 雪夜
+order: 1
+volume: 第一卷 少年游
+status: draft
+---
+
+　　他站在城头，看雪落下来。
+
+　　"你确定要走？"身后有人问。
+
+　　他没有回头。
+```
+
+然后：
+
+1. 后端启动，访问 `POST /api/libraries` 添加 `D:/Project/yi-mo/test-library`
+2. 访问 `POST /api/libraries/{id}/rescan` 触发扫描（迭代 2 的接口）
+3. 访问 `GET /api/libraries/{id}/tree` 拿到章节 id
+4. 访问 `GET /api/chapters/{章节id}` 看返回
+
+最后浏览器打开 `http://localhost:5173/chapters/{章节id}`。
 
 | 检查 | 怎么做 | 预期 |
 |---|---|---|
 | 正文和文件一致 | 打开 `.md` 对照 | 一字不差 |
-| frontmatter 没混进正文 | 看显示内容 | 没有 `---` 和字段 |
+| frontmatter 没混进正文 | 看显示内容 | 没有 `---` 和 `title:` 这些 |
 | 全角空格缩进保留 | 看段落开头 | 两个全角空格的缩进在 |
-| 切换章节不串内容 | 快速点几章 | 内容跟着变，不残留 |
+| 切换章节不串内容 | 改地址栏的 id | 内容跟着变，不残留 |
+| 中文不乱码 | 看正文 | 正常显示 |
 
 ---
 
