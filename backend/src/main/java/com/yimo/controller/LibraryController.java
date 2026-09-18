@@ -1,6 +1,8 @@
 package com.yimo.controller;
 
 
+import com.yimo.common.BizException;
+import com.yimo.common.ErrorCode;
 import com.yimo.domain.Library;
 import com.yimo.mapper.LibraryMapper;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,4 +26,5 @@ public class LibraryController {
     public List<Library> list() {
         return libraryMapper.selectList(null);
     }
+
 }

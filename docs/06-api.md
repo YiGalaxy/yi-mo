@@ -22,6 +22,45 @@ server:
   port: 18080
 ```
 
+### 导入 Apifox
+
+`openapi/yimo-api.json` 是 OpenAPI 3.0 规范，可直接导入 Apifox：**项目设置 → 导入数据 → OpenAPI/Swagger → 上传文件**。
+
+**有个坑：不处理的话所有接口都会变成「已发布」。**
+
+Apifox 的接口状态不是 OpenAPI 标准字段，它靠扩展字段 `x-apifox-status` 判断。**没有这个字段时，Apifox 默认给「已发布」**——而我们所有接口其实都还没实现，标成已发布是误导。
+
+所以文件里每个 operation 都带了一行：
+
+```json
+{
+  "tags": ["Library"],
+  "summary": "添加书库",
+  "operationId": "createLibrary",
+  "x-apifox-status": "developing",
+  ...
+}
+```
+
+`x-apifox-status` 的取值：
+
+| 值 | 界面显示 |
+|---|---|
+| `designing` | 设计中 |
+| `pending` | 待确定 |
+| `developing` | **开发中**（本项目统一用这个） |
+| `integrating` | 联调中 |
+| `testing` | 测试中 |
+| `tested` | 已测完 |
+| `released` | 已发布 |
+| `deprecated` | 将废弃 |
+| `exception` | 有异常 |
+| `obsolete` | 已废弃 |
+
+**接口做完之后记得改**：实现并通过测试的接口，把 `developing` 改成 `tested` 或 `released`，Apifox 里重新导入即可。
+
+**手改 JSON 要注意**：这个文件用标准 2 空格缩进、一个字段一行，是为了 diff 精确——别为了省行数把多个字段挤在一行，那会让后续每次改动都产生大片无意义的 diff。
+
 ### 响应格式
 
 成功直接返回数据体，失败返回统一错误体。**不套 `{code, message, data}` 外壳**——HTTP 状态码已经表达了成败，再包一层是冗余。
