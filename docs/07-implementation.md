@@ -71,19 +71,30 @@ public Library create(LibraryCreateRequest req) {
 优先级从高到低：
 
 ```java
-public DocType infer(Path file, Map<String, Object> frontmatter, Path bookRoot) {
+public DocType infer(Path file, Map<String, Object> frontmatter, Path root) {
     // 1. frontmatter 的 yimo 字段最权威
     Object yimo = frontmatter.get("yimo");
     if (yimo != null) return DocType.from(yimo.toString());
 
-    // 2. 看所在目录名
-    Path dir = bookRoot.relativize(file).getName(0);
-    String dirName = dir.toString();
-    if (contains(dirName, "正文", "章节", "chapters"))  return CHAPTER;
-    if (contains(dirName, "人物", "角色", "characters")) return ENTITY_CHARACTER;
-    if (contains(dirName, "地点", "locations"))          return ENTITY_LOCATION;
-    if (contains(dirName, "物品", "道具", "items"))      return ENTITY_ITEM;
-    if (contains(dirName, "组织", "势力", "orgs"))       return ENTITY_ORG;
+    // 2. 看路径上的每一层目录名
+
+    // 从文件所在的目录开始往上遍历。
+    // 不能只看第一层——书库结构是「书库根/书名/07-正文/章节.md」，
+    // 相对路径的第一层是书名（剑来），第二层才是类型目录（07-正文）。
+    // 只看第一层的话一个章节都识别不出来，而且不报任何错。
+    //
+    // 从最深层往上找，让靠内的目录优先：
+    // 「书库/正文/人物/xxx.md」按「人物」算，不是「正文」
+    Path current = file.getParent();
+    while (current != null && !current.equals(root)) {
+        String dirName = stripNumberPrefix(current.getFileName().toString());
+        if (contains(dirName, "正文", "章节", "chapters"))   return CHAPTER;
+        if (contains(dirName, "人物", "角色", "characters")) return ENTITY_CHARACTER;
+        if (contains(dirName, "地点", "locations"))          return ENTITY_LOCATION;
+        if (contains(dirName, "物品", "道具", "items"))      return ENTITY_ITEM;
+        if (contains(dirName, "组织", "势力", "orgs"))       return ENTITY_ORG;
+        current = current.getParent();
+    }
 
     // 3. 看文件名
     if (file.getFileName().toString().contains("大纲")) return OUTLINE;
@@ -94,6 +105,8 @@ public DocType infer(Path file, Map<String, Object> frontmatter, Path bookRoot) 
 ```
 
 **目录名匹配要忽略编号前缀。** `07-正文` 要先剥掉 `07-` 再匹配。
+
+**这个 bug 极其隐蔽**：不报错、不抛异常，扫描结果是「找到 3 个文件，索引 0 个章节」，只是树是空的。第一次遇到很难想到是判断层级错了。
 
 ### 扫描流程
 
@@ -837,7 +850,7 @@ List<Hook> stale = hookRepo.findOpenOlderThan(libId, chapterOrder - 30);
 
 ```sql
 CREATE TABLE chapter_content (
-  chapter_id  CHAR(26)   NOT NULL PRIMARY KEY,
+  chapter_id  VARCHAR(32)   NOT NULL PRIMARY KEY,
   body        MEDIUMTEXT NOT NULL,
   FULLTEXT KEY ft_body (body) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

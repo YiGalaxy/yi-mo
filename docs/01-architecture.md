@@ -144,7 +144,7 @@ MySQL 存**所有派生数据和服务级数据**。原则：**数据库里的�
 ```sql
 -- 章节索引
 CREATE TABLE chapter (
-  id            CHAR(26)     NOT NULL PRIMARY KEY COMMENT 'ULID',
+  id            VARCHAR(32)     NOT NULL PRIMARY KEY COMMENT 'ULID',
   library_id    BIGINT       NOT NULL,
   rel_path      VARCHAR(500) NOT NULL COMMENT '相对书库根的路径',
   title         VARCHAR(200),
@@ -162,7 +162,7 @@ CREATE TABLE chapter (
 
 -- 正文副本 + 全文索引
 CREATE TABLE chapter_content (
-  chapter_id  CHAR(26)   NOT NULL PRIMARY KEY,
+  chapter_id  VARCHAR(32)   NOT NULL PRIMARY KEY,
   body        MEDIUMTEXT NOT NULL,
   FULLTEXT KEY ft_body (body) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -175,14 +175,14 @@ CREATE TABLE chapter_content (
 ```sql
 -- 实体
 CREATE TABLE entity (
-  id           CHAR(26)     NOT NULL PRIMARY KEY,
+  id           VARCHAR(32)     NOT NULL PRIMARY KEY,
   library_id   BIGINT       NOT NULL,
   type         VARCHAR(20)  NOT NULL COMMENT 'character/location/item/org/term',
   name         VARCHAR(200) NOT NULL,
   aliases      JSON         COMMENT '别名数组',
   file_path    VARCHAR(500) COMMENT '实体卡文件的相对路径',
   status       VARCHAR(20)  COMMENT 'alive/dead/missing/unknown',
-  first_appear CHAR(26),
+  first_appear VARCHAR(32),
   attributes   JSON         COMMENT '自由键值对',
   KEY idx_library_type (library_id, type),
   KEY idx_name (library_id, name)
@@ -190,8 +190,8 @@ CREATE TABLE entity (
 
 -- 批注
 CREATE TABLE review (
-  id            CHAR(26)     NOT NULL PRIMARY KEY,
-  chapter_id    CHAR(26)     NOT NULL,
+  id            VARCHAR(32)     NOT NULL PRIMARY KEY,
+  chapter_id    VARCHAR(32)     NOT NULL,
   kind          VARCHAR(20)  COMMENT 'typo/grammar/style/consistency/suggestion',
   severity      VARCHAR(20),
   anchor_from   INT,
@@ -210,9 +210,9 @@ CREATE TABLE review (
 
 -- AI 任务与缓存
 CREATE TABLE ai_task (
-  id            CHAR(26)    NOT NULL PRIMARY KEY,
+  id            VARCHAR(32)    NOT NULL PRIMARY KEY,
   library_id    BIGINT,
-  chapter_id    CHAR(26),
+  chapter_id    VARCHAR(32),
   kind          VARCHAR(30) COMMENT 'proofread/extract/summary/consistency/rewrite/chat',
   status        VARCHAR(20) COMMENT 'queued/running/done/failed/cancelled',
   model         VARCHAR(100),

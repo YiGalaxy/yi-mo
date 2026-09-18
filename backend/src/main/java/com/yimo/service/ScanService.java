@@ -6,6 +6,10 @@ import com.yimo.common.BizException;
 import com.yimo.common.ErrorCode;
 import com.yimo.common.Ids;
 import com.yimo.domain.Chapter;
+import com.yimo.dto.BookNode;
+import com.yimo.dto.ChapterBrief;
+import com.yimo.dto.TreeResponse;
+import com.yimo.dto.VolumeNode;
 import com.yimo.mapper.ChapterMapper;
 import com.yimo.storage.DocType;
 import com.yimo.storage.FrontmatterCodec;
@@ -21,9 +25,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
@@ -199,5 +205,73 @@ public class ScanService {
                         .eq(Chapter::getLibraryId, libraryId)
                         .eq(Chapter::getRelPath, relPath));
         return existing == null ? Optional.empty() : Optional.of(existing.getId());
+    }
+
+    // ===== 下面是树的组装 =====
+
+    /**
+     * 组装卷章树。
+     *
+     * <p>数据全部来自 chapter 表，不读文件——树只需要元数据。
+     */
+    public TreeResponse buildTree(String libraryId) {
+        // 一次查出所有章节，在数据库里排好序。
+        // 交给 MySQL 排比在 Java 里对几百条数据 sort 更省内存
+        List<Chapter> chapters = chapterMapper.selectList(
+                new LambdaQueryWrapper<Chapter>()
+                        .eq(Chapter::getLibraryId, libraryId)
+                        .orderByAsc(Chapter::getBookName)
+                        .orderByAsc(Chapter::getSortOrder));
+
+        // 先按书名分组。
+        // 用 LinkedHashMap 是为了保持上一步排好的顺序——
+        // groupingBy 默认返回 HashMap，遍历顺序不确定，
+        // 会让书和卷的显示顺序随机变化
+        Map<String, List<Chapter>> byBook = chapters.stream()
+                .collect(Collectors.groupingBy(
+                        Chapter::getBookName,
+                        LinkedHashMap::new,
+                        Collectors.toList()));
+
+        List<BookNode> books = new ArrayList<>();
+
+        for (Map.Entry<String, List<Chapter>> entry : byBook.entrySet()) {
+            String bookName = entry.getKey();
+            List<Chapter> bookChapters = entry.getValue();
+
+            // 再按卷名分组。volume 为 null 时归到空串那一组（即「未分卷」）
+            Map<String, List<Chapter>> byVolume = bookChapters.stream()
+                    .collect(Collectors.groupingBy(
+                            c -> c.getVolume() == null ? "" : c.getVolume(),
+                            LinkedHashMap::new,
+                            Collectors.toList()));
+
+            List<VolumeNode> volumes = byVolume.entrySet().stream()
+                    .map(ve -> new VolumeNode(
+                            ve.getKey(),
+                            ve.getValue().stream().map(this::toBrief).toList()))
+                    .toList();
+
+            int totalWords = bookChapters.stream()
+                    .mapToInt(c -> c.getWordCount() == null ? 0 : c.getWordCount())
+                    .sum();
+
+            books.add(new BookNode(bookName, bookName, volumes,
+                    totalWords, bookChapters.size()));
+        }
+
+        return new TreeResponse(books);
+    }
+
+    /** 实体 → 树上用的简要信息 */
+    private ChapterBrief toBrief(Chapter c) {
+        return new ChapterBrief(
+                c.getId(),
+                c.getTitle(),
+                c.getRelPath(),
+                c.getSortOrder(),
+                c.getStatus(),
+                c.getWordCount() == null ? 0 : c.getWordCount(),
+                0);     // pendingReviewCount，批注功能做完后填真实值
     }
 }

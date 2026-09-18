@@ -965,10 +965,10 @@ docker compose exec mysql mysql -uyimo -pyimo_dev_2026 yimo
 USE yimo;
 
 CREATE TABLE library (
-  -- CHAR(26) 而不是 VARCHAR(26)：定长类型在 MySQL 里存得更紧凑，
+  -- VARCHAR(32) 而不是 VARVARCHAR(32)：定长类型在 MySQL 里存得更紧凑，
   -- 而且能提前挡住「不小心存了长度不对的 id」这种事。
   -- 26 是 ULID 本身的长度，不含 lib_ 前缀
-  id           CHAR(26)     NOT NULL PRIMARY KEY COMMENT 'ULID，不含前缀',
+  id           VARCHAR(32)     NOT NULL PRIMARY KEY COMMENT 'ULID，不含前缀',
 
   -- VARCHAR(100) 对书库名足够。这里必须给长度，MySQL 不允许 VARCHAR 不写长度
   name         VARCHAR(100) NOT NULL,
@@ -3419,11 +3419,11 @@ async function browse() {
 ```sql
 CREATE TABLE chapter (
   -- 主键。跟 library 表一样是 ULID，不含 ch_ 前缀
-  id            CHAR(26)     NOT NULL PRIMARY KEY,
+  id            VARCHAR(32)     NOT NULL PRIMARY KEY,
 
   -- 属于哪个书库。虽然可以从 rel_path 反推，
   -- 但显式存一列，查询和删除时能直接用索引，不用做字符串处理
-  library_id    CHAR(26)     NOT NULL,
+  library_id    VARCHAR(32)     NOT NULL,
 
   -- 书名，取自书库根下的第一层目录名。
   -- 冗余存储是为了「按书分组显示章节树」时不用每次都去解析路径
@@ -3461,6 +3461,128 @@ CREATE TABLE chapter (
 ```
 
 **注意这里没有全文索引**。全文检索用的是另一张表（`chapter_content`），因为 MySQL 的 ngram 全文索引会让表变大不少，而大部分查询（列章节树、读元数据）根本用不到它。分开存更划算。
+
+**1.5 写实体和 Mapper**
+
+表建好了，接下来写对应的 Java 类。
+
+新建 `backend/src/main/java/com/yimo/domain/Chapter.java`：
+
+```java
+package com.yimo.domain;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+
+import java.time.LocalDateTime;
+
+/**
+ * 章节。
+ *
+ * <p>注意这里存的只是「索引信息」——标题、序号、卷名、字数这些用来
+ * 显示章节树的数据。**正文不在这里**，正文永远在磁盘的 .md 文件里。
+ *
+ * <p>这样设计的好处：数据库丢了可以从文件重建，而文件丢了才是真丢了。
+ */
+@Data
+@TableName("chapter")
+public class Chapter {
+
+    /** 由代码生成的 ULID（不含 ch_ 前缀），不是数据库自增 */
+    @TableId(type = IdType.INPUT)
+    private String id;
+
+    /** 属于哪个书库 */
+    private String libraryId;
+
+    /** 书名，取自书库根下的第一层目录名 */
+    private String bookName;
+
+    /** 相对书库根的路径，统一用正斜杠 */
+    private String relPath;
+
+    // ===== 下面这些来自 frontmatter，可能为空 =====
+
+    private String title;
+    private String volume;
+
+    /** 卷内序号，用于排序 */
+    private Integer sortOrder;
+
+    /** draft / revising / done */
+    private String status;
+
+    private Integer wordCount;
+
+    /**
+     * 正文的 SHA-256 哈希。
+     *
+     * <p>两个用途：重新扫描时比对，内容没变就跳过解析；
+     * 保存正文时检测文件是否被外部程序改过。
+     */
+    private String contentHash;
+
+    /** 视角人物 */
+    private String pov;
+
+    /** 故事内时间，作者自由填写 */
+    private String storyTime;
+
+    private LocalDateTime updatedAt;
+}
+```
+
+**`@Data` 会自动生成 getter/setter**——ScanService 里那一串 `ch.setXxx(...)` 就靠它。缺了会编译不过。
+
+新建 `backend/src/main/java/com/yimo/mapper/ChapterMapper.java`：
+
+```java
+package com.yimo.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.yimo.domain.Chapter;
+import org.apache.ibatis.annotations.Mapper;
+
+/**
+ * 章节的数据访问接口。
+ *
+ * <p>不用写实现——MyBatis 运行时用动态代理生成。
+ * 继承 BaseMapper 之后自带 insert / updateById / selectById /
+ * selectList / selectCount / insertOrUpdate 等常用方法。
+ */
+@Mapper
+public interface ChapterMapper extends BaseMapper<Chapter> {
+}
+```
+
+**1.6 扫描结果**
+
+新建 `backend/src/main/java/com/yimo/service/ScanResult.java`：
+
+```java
+package com.yimo.service;
+
+import java.util.List;
+
+/**
+ * 扫描结果。
+ *
+ * @param total   扫到的文件总数
+ * @param indexed 成功索引的章节数
+ * @param errors  解析失败的文件相对路径，会展示给作者
+ */
+public record ScanResult(int total, int indexed, List<String> errors) {
+
+    /** 是否有文件解析失败 */
+    public boolean hasErrors() {
+        return !errors.isEmpty();
+    }
+}
+```
+
+**为什么要单独一个 record 而不是返回三个值**：Java 方法只能返回一个值。返回 Map 的话，键名写错要到运行时才发现；返回这个 record，写错字段名编译器直接报错。
 
 **2. Frontmatter 解析器**
 
@@ -4006,32 +4128,514 @@ public record ScanResult(int total, int indexed, List<String> errors) {
 
 **`relPath` 统一用正斜杠**。Windows 的 `Path.toString()` 给的是反斜杠，而反斜杠在 JSON 里要写成 `\\`、在正则里是转义符，一路都是麻烦。存进数据库时就统一成斜杠，读取时不用再转换。
 
-**4. 类型推断**（`com/yimo/storage/TypeInferrer.java`）
+**4. 类型推断**
 
-按 `07-implementation.md` §2 的规则实现。关键是**剥掉目录名的编号前缀再匹配**：
+#### 要解决什么问题
+
+作者的文件夹里混着各种东西：正文章节、人物卡、大纲、随手记的笔记。亿墨得能分清哪些该进章节树、哪些该进知识库、哪些不用管。
+
+**判断依据有强有弱**，按优先级来：
+
+| 优先级 | 依据 | 说明 |
+|---|---|---|
+| 1 | frontmatter 里的 `yimo` 字段 | 最权威——作者明确写了「这是章节」 |
+| 2 | 所在目录名 | 「07-正文」里的都是章节，「03-人物」里的都是人物卡 |
+| 3 | 文件名 | 含「大纲」的当大纲 |
+| 4 | 兜底 | 当普通笔记，能编辑但不参与索引 |
+
+#### 先定义类型枚举
+
+新建 `backend/src/main/java/com/yimo/storage/DocType.java`：
 
 ```java
-private static String stripPrefix(String dirName) {
-    return dirName.replaceFirst("^\\d+[-_.\\s]*", "");
+package com.yimo.storage;
+
+/**
+ * 书库里的文件类型。
+ *
+ * <p>判断顺序见 {@link TypeInferrer}。
+ */
+public enum DocType {
+
+    /** 正文章节。会写进 chapter 表，出现在章节树里 */
+    CHAPTER,
+
+    /** 人物卡 */
+    ENTITY_CHARACTER,
+
+    /** 地点 */
+    ENTITY_LOCATION,
+
+    /** 物品 */
+    ENTITY_ITEM,
+
+    /** 组织 / 势力 */
+    ENTITY_ORG,
+
+    /** 术语 / 设定 */
+    ENTITY_TERM,
+
+    /** 大纲 */
+    OUTLINE,
+
+    /** 普通笔记。可编辑，但不参与索引 */
+    NOTE;
+
+    /** 是不是知识库实体（人物、地点、物品、组织、术语） */
+    public boolean isEntity() {
+        return this == ENTITY_CHARACTER
+                || this == ENTITY_LOCATION
+                || this == ENTITY_ITEM
+                || this == ENTITY_ORG
+                || this == ENTITY_TERM;
+    }
 }
 ```
+
+**为什么不用一个 boolean `isChapter`**：将来要做知识库时，得区分「人物卡」和「地点卡」——它们的字段结构不一样。现在多写几个枚举值，比以后改结构便宜。
+
+#### 推断逻辑
+
+新建 `backend/src/main/java/com/yimo/storage/TypeInferrer.java`：
+
+```java
+package com.yimo.storage;
+
+import java.nio.file.Path;
+import java.util.Map;
+
+/**
+ * 推断一个 Markdown 文件是什么类型。
+ *
+ * <p>为什么需要推断：作者的文件夹里可能混着章节、人物卡、大纲、随手写的笔记。
+ * 亿墨要能分清哪些该进章节树、哪些该进知识库、哪些不用管。
+ *
+ * <p>判断顺序（优先级从高到低）：
+ * <ol>
+ *   <li>frontmatter 里的 {@code yimo} 字段——最权威，作者明确写了</li>
+ *   <li>所在目录名——"07-正文" 里的都是章节，"03-人物" 里的都是人物卡</li>
+ *   <li>文件名——含「大纲」的当大纲</li>
+ *   <li>兜底当普通笔记，不参与索引</li>
+ * </ol>
+ */
+public final class TypeInferrer {
+
+    private TypeInferrer() {
+    }
+
+    /**
+     * 推断文件类型。
+     *
+     * @param file        文件的绝对路径
+     * @param frontmatter 已解析出的元数据，可能为空 Map
+     * @param root        计算相对路径的基准目录。传书库根或书的根都行
+     */
+    public static DocType infer(Path file, Map<String, Object> frontmatter, Path root) {
+        // ===== 1. frontmatter 的 yimo 字段最权威 =====
+        Object yimo = frontmatter.get("yimo");
+        if (yimo != null) {
+            DocType fromField = parseYimoField(yimo.toString());
+            if (fromField != null) {
+                return fromField;
+            }
+        }
+
+        // ===== 2. 看路径上的每一层目录名 =====
+
+        // 从文件所在的目录开始，一层层往上找。
+        //
+        // 为什么不能只看第一层：书库结构是「书库根/书名/07-正文/章节.md」，
+        // 相对路径的第一层是书名（剑来），第二层才是类型目录（07-正文）。
+        // 只看第一层的话，一个章节都识别不出来——扫描结果会是
+        // 「找到 3 个文件，索引 0 个章节」，而且不报任何错。
+        //
+        // 从最深层往上找，让靠内的目录优先：
+        // 「书库/正文/人物/xxx.md」里的文件按「人物」算，不是「正文」
+        Path current = file.getParent();
+        Path stopAt = root.toAbsolutePath().normalize();
+
+        while (current != null) {
+            String dirName = stripNumberPrefix(current.getFileName().toString());
+
+            DocType fromDir = matchDirectory(dirName);
+            if (fromDir != null) {
+                return fromDir;
+            }
+
+            // 找到基准目录就停，不要一路找到盘符根目录去
+            if (current.toAbsolutePath().normalize().equals(stopAt)) {
+                break;
+            }
+            current = current.getParent();
+        }
+
+        // ===== 3. 看文件名 =====
+        String fileName = file.getFileName().toString();
+        if (fileName.contains("大纲")) {
+            return DocType.OUTLINE;
+        }
+
+        // ===== 4. 兜底 =====
+        return DocType.NOTE;
+    }
+
+    /** 解析 frontmatter 里的 yimo 值 */
+    private static DocType parseYimoField(String value) {
+        return switch (value.trim().toLowerCase()) {
+            case "chapter" -> DocType.CHAPTER;
+            case "outline" -> DocType.OUTLINE;
+            case "note" -> DocType.NOTE;
+            case "entity" -> DocType.ENTITY_TERM;   // 没写具体类型时当术语
+            default -> null;                        // 不认识的值，交给后面的规则判断
+        };
+    }
+
+    /** 按目录名匹配类型。目录名已经剥掉了编号前缀 */
+    private static DocType matchDirectory(String dirName) {
+        if (containsAny(dirName, "正文", "章节", "chapter")) {
+            return DocType.CHAPTER;
+        }
+        if (containsAny(dirName, "人物", "角色", "character")) {
+            return DocType.ENTITY_CHARACTER;
+        }
+        if (containsAny(dirName, "地点", "location")) {
+            return DocType.ENTITY_LOCATION;
+        }
+        if (containsAny(dirName, "物品", "道具", "item")) {
+            return DocType.ENTITY_ITEM;
+        }
+        if (containsAny(dirName, "组织", "势力", "org")) {
+            return DocType.ENTITY_ORG;
+        }
+        return null;
+    }
+
+    /**
+     * 剥掉目录名的编号前缀。
+     *
+     * <p>"07-正文" → "正文"，"01__人物" → "人物"，"3. 地点" → "地点"。
+     *
+     * <p>为什么要剥：作者可能给目录加编号来控制排序，
+     * 但加不加编号不影响它是什么目录——"07-正文" 和 "正文"
+     * 应该被识别成同一类。
+     *
+     * <p>这是整个推断逻辑里唯一容易写错的地方。不剥的话，
+     * 作者一加编号，所有章节就都识别不出来了。
+     */
+    private static String stripNumberPrefix(String dirName) {
+        return dirName.replaceFirst("^\\d+[-_.\\s]*", "");
+    }
+
+    private static boolean containsAny(String text, String... keywords) {
+        String lower = text.toLowerCase();
+        for (String kw : keywords) {
+            if (lower.contains(kw.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+```
+
+**为什么这些方法都是 static**：`TypeInferrer` 不持有任何状态，也不依赖 Spring 容器里的东西。用静态方法调用起来最简单：`TypeInferrer.infer(...)`，不用注入。
+
+（对比 `FrontmatterCodec` 用了 `@Component`——因为它持有 `Yaml` 实例，重复创建浪费。）
 
 **5. 树接口**
 
+#### 先定义返回结构
+
+树是三层：**书 → 卷 → 章**。
+
+新建 `backend/src/main/java/com/yimo/dto/TreeResponse.java`：
+
 ```java
-@GetMapping("/{libraryId}/tree")
-public TreeResponse tree(@PathVariable String libraryId) {
-    return scanService.buildTree(libraryId);
+package com.yimo.dto;
+
+import java.util.List;
+
+/** 书库的完整结构 */
+public record TreeResponse(List<BookNode> books) {
 }
 ```
 
-组装成 `book → volumes → chapters` 三层。
+新建 `backend/src/main/java/com/yimo/dto/BookNode.java`：
+
+```java
+package com.yimo.dto;
+
+import java.util.List;
+
+/**
+ * 一本书。
+ *
+ * @param volumes    卷列表。没分卷时这里只有一个 name 为空串的「卷」
+ * @param totalWords 全书字数
+ */
+public record BookNode(
+        String name,
+        String relPath,
+        List<VolumeNode> volumes,
+        int totalWords,
+        int chapterCount
+) {
+}
+```
+
+新建 `backend/src/main/java/com/yimo/dto/VolumeNode.java`：
+
+```java
+package com.yimo.dto;
+
+import java.util.List;
+
+/** 一卷 */
+public record VolumeNode(String name, List<ChapterBrief> chapters) {
+}
+```
+
+新建 `backend/src/main/java/com/yimo/dto/ChapterBrief.java`：
+
+```java
+package com.yimo.dto;
+
+/**
+ * 章节在树上的简要信息。
+ *
+ * <p>注意这里没有 content —— 树只显示目录，不需要正文。
+ * 正文等点开某一章时再单独请求。
+ *
+ * @param pendingReviewCount 待处理的批注数，前端用它显示红色角标
+ */
+public record ChapterBrief(
+        String id,
+        String title,
+        String relPath,
+        Integer order,
+        String status,
+        int wordCount,
+        int pendingReviewCount
+) {
+}
+```
+
+**为什么树的 DTO 和 `ChapterDetail` 要分开**：树只显示标题和字数，一个书库有几百章，把每章的正文都塞进树接口的响应里，一次要传几 MB——**而其中 99% 的数据用户根本不会看**。分开定义，让每个接口只返回它需要的字段。
+
+#### 在 ScanService 里组装
+
+`ScanService` 加一个方法：
+
+```java
+/**
+ * 组装卷章树。
+ *
+ * <p>数据全部来自 chapter 表，不读文件——树只需要元数据。
+ */
+public TreeResponse buildTree(String libraryId) {
+    // 一次查出所有章节，按书 → 卷 → 序号排好序
+    List<Chapter> chapters = chapterMapper.selectList(
+            new LambdaQueryWrapper<Chapter>()
+                    .eq(Chapter::getLibraryId, libraryId)
+                    .orderByAsc(Chapter::getBookName)
+                    .orderByAsc(Chapter::getSortOrder));
+
+    // 先按书名分组
+    Map<String, List<Chapter>> byBook = chapters.stream()
+            .collect(Collectors.groupingBy(Chapter::getBookName,
+                    LinkedHashMap::new,      // 保持上一步排序好的顺序
+                    Collectors.toList()));
+
+    List<BookNode> books = new ArrayList<>();
+
+    for (var entry : byBook.entrySet()) {
+        String bookName = entry.getKey();
+        List<Chapter> bookChapters = entry.getValue();
+
+        // 再按卷名分组
+        Map<String, List<Chapter>> byVolume = bookChapters.stream()
+                .collect(Collectors.groupingBy(
+                        c -> c.getVolume() == null ? "" : c.getVolume(),
+                        LinkedHashMap::new,
+                        Collectors.toList()));
+
+        List<VolumeNode> volumes = byVolume.entrySet().stream()
+                .map(ve -> new VolumeNode(
+                        ve.getKey(),
+                        ve.getValue().stream().map(this::toBrief).toList()))
+                .toList();
+
+        int totalWords = bookChapters.stream()
+                .mapToInt(c -> c.getWordCount() == null ? 0 : c.getWordCount())
+                .sum();
+
+        books.add(new BookNode(bookName, bookName, volumes,
+                totalWords, bookChapters.size()));
+    }
+
+    return new TreeResponse(books);
+}
+
+private ChapterBrief toBrief(Chapter c) {
+    return new ChapterBrief(
+            c.getId(),
+            c.getTitle(),
+            c.getRelPath(),
+            c.getSortOrder(),
+            c.getStatus(),
+            c.getWordCount() == null ? 0 : c.getWordCount(),
+            0);     // pendingReviewCount，批注功能做完后填真实值
+}
+```
+
+**为什么排序在数据库做**：`orderByAsc` 交给 MySQL 排，比在 Java 里对几百条数据做 sort 更省内存，也更符合习惯。
+
+**为什么用 `LinkedHashMap` 收集分组**：`Collectors.groupingBy` 默认返回 `HashMap`，遍历顺序不确定。书和卷的显示顺序会随机变化。用 `LinkedHashMap` 保持「插入顺序」——也就是数据库里排好的顺序。
+
+#### Controller
+
+新建 `backend/src/main/java/com/yimo/controller/TreeController.java`：
+
+```java
+package com.yimo.controller;
+
+import com.yimo.dto.TreeResponse;
+import com.yimo.service.ScanService;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/libraries")
+public class TreeController {
+
+    private final ScanService scanService;
+
+    public TreeController(ScanService scanService) {
+        this.scanService = scanService;
+    }
+
+    /** GET /api/libraries/{id}/tree —— 取整个书库的卷章树 */
+    @GetMapping("/{libraryId}/tree")
+    public TreeResponse tree(@PathVariable String libraryId) {
+        return scanService.buildTree(libraryId);
+    }
+}
+```
+
+**扫描的触发接口**也放这里（或者加到 `LibraryController`）：
+
+```java
+/** POST /api/libraries/{id}/rescan —— 重新扫描并重建索引 */
+@PostMapping("/{libraryId}/rescan")
+public ScanResult rescan(@PathVariable String libraryId) {
+    Path root = storage.rootOf(libraryId);
+    return scanService.scan(libraryId, root);
+}
+```
+
+**注意这个接口是同步的**。100 万字的书库全量扫描要 30 秒左右，请求会一直挂着。
+
+对本地应用，30 秒可接受（用户看着加载动画等）。真嫌慢的话，后面可以改成「返回 taskId + SSE 推送进度」，但那需要任务队列，现在不必做。
 
 ### 前端
 
-用 Naive UI 的 `NTree` 组件，把树数据转成它的 `TreeOption` 格式。
+#### 用 NTree 渲染
 
-**关键**：树节点要显示字数，有待处理批注的章节显示红色角标。
+Naive UI 的 `NTree` 需要一个特定格式的数组，所以要转换一次。
+
+新建 `frontend/src/views/TreeView.vue`：
+
+```vue
+<script setup lang="ts">
+import { ref, onMounted, computed, h } from 'vue'
+import { NTree, NTag, type TreeOption } from 'naive-ui'
+import { libraryApi } from '@/api/library'
+import { toApiError } from '@/api/http'
+
+interface ChapterBrief {
+  id: string
+  title: string
+  order: number
+  status: string
+  wordCount: number
+  pendingReviewCount: number
+}
+interface VolumeNode {
+  name: string
+  chapters: ChapterBrief[]
+}
+interface BookNode {
+  name: string
+  volumes: VolumeNode[]
+  totalWords: number
+}
+
+const libraryId = defineModel<string>('libraryId', { required: true })
+
+const books = ref<BookNode[]>([])
+const error = ref('')
+
+async function load() {
+  try {
+    const res = await libraryApi.tree(libraryId.value)
+    books.value = res.books
+  } catch (e) {
+    error.value = toApiError(e).message
+  }
+}
+
+/**
+ * 把后端的三层结构转成 NTree 要的格式。
+ *
+ * NTree 的每个节点是 { key, label, children }。
+ * label 可以是字符串，也可以是一个渲染函数（这里用它来
+ * 在章节名后面挂字数标签和批注角标）。
+ */
+const treeData = computed<TreeOption[]>(() =>
+  books.value.map((book) => ({
+    key: `book:${book.name}`,
+    label: `${book.name}（${book.totalWords} 字）`,
+    children: book.volumes.map((volume) => ({
+      key: `volume:${book.name}:${volume.name}`,
+      label: volume.name || '未分卷',
+      children: volume.chapters.map((ch) => ({
+        key: `chapter:${ch.id}`,
+        // 返回 VNode 数组：章节标题 + 可选的批注角标
+        label: () =>
+          h('span', { class: 'flex items-center gap-2' }, [
+            h('span', ch.title),
+            ch.pendingReviewCount > 0
+              ? h(NTag, { size: 'tiny', type: 'error', round: true },
+                  { default: () => ch.pendingReviewCount })
+              : null,
+          ]),
+      })),
+    })),
+  })),
+)
+
+onMounted(load)
+</script>
+
+<template>
+  <div class="p-4">
+    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    <n-tree
+      v-else
+      :data="treeData"
+      block-line
+      default-expand-all
+      :selectable="false"
+    />
+  </div>
+</template>
+```
+
+**`label` 可以是函数**。当节点需要的不只是文字（比如这里要加红色角标），就把 `label` 写成返回 VNode 的函数，用 `h()` 来构造元素。
+
+**`v-if="pendingReviewCount > 0"` 那个三元表达式返回 `null`** 而不是 `false`——`h()` 允许数组里出现 null，会被忽略。
 
 ### 验证清单
 

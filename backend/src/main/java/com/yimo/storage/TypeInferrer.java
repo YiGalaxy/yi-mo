@@ -42,15 +42,33 @@ public final class TypeInferrer {
         // 算出文件相对于书库根的路径，用来判断目录
         Path relative = bookRoot.relativize(file);
 
-        // ===== 2. 看所在目录名 =====
-        if (relative.getNameCount() > 1) {
-            // 第一层目录名，比如 "07-正文"
-            String dirName = stripNumberPrefix(relative.getName(0).toString());
+        // ===== 2. 看路径上的每一层目录名 =====
+
+        // 从文件名所在的目录开始，一层层往上找。
+        //
+        // 为什么不能只看第一层：书库结构是「书库根/书名/07-正文/章节.md」，
+        // 相对路径的第一层是书名（剑来），第二层才是类型目录（07-正文）。
+        // 只看第一层的话，一个章节都识别不出来——扫描结果会是
+        // 「找到 3 个文件，索引 0 个章节」，而且不报任何错。
+        //
+        // 从最深层往上找，让靠内的目录优先：
+        // 「书库/正文/人物/xxx.md」里的文件按「人物」算，不是「正文」
+        Path current = file.getParent();
+        Path stopAt = bookRoot.toAbsolutePath().normalize();
+
+        while (current != null) {
+            String dirName = stripNumberPrefix(current.getFileName().toString());
 
             DocType fromDir = matchDirectory(dirName);
             if (fromDir != null) {
                 return fromDir;
             }
+
+            // 找到书库根就停，不要一路找到盘符根目录去
+            if (current.toAbsolutePath().normalize().equals(stopAt)) {
+                break;
+            }
+            current = current.getParent();
         }
 
         // ===== 3. 看文件名 =====
