@@ -30,8 +30,11 @@ public class LibraryService {
         if(!Files.isDirectory(path)){
             throw new BizException(ErrorCode.LIBRARY_PATH_INVALID,"目录不存在: "+ path.toString());
         }
-        if(!Files.isRegularFile(path)){
-            throw new BizException(ErrorCode.LIBRARY_PATH_INVALID,"目录不可读: " + path.toString());
+        // 注意是 isReadable，不是 isRegularFile。
+        // isRegularFile 判断的是「是不是普通文件」，对目录永远返回 false，
+        // 写成 !isRegularFile 会导致每次添加书库都误报「目录不可读」
+        if(!Files.isReadable(path)){
+            throw new BizException(ErrorCode.LIBRARY_PATH_INVALID,"目录不可读: " + path);
         }
         Long exists =libraryMapper.selectCount(
                 new LambdaQueryWrapper<Library>().eq(Library::getPath,path.toString())
