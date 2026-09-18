@@ -47,3 +47,6 @@ backend/src/main/resources/application-local.yml
 .env.local
 # Docker 本地覆盖配置
 docker-compose.override.yml
+
+# ESLint 缓存
+frontend/.eslintcache
