@@ -1,4 +1,12 @@
 package com.yimo.dto;
 
-public record LibraryView() {
-}
+import java.time.OffsetDateTime;
+
+public record LibraryView(String id,
+                          String name,
+                          String path,
+                          int bookCount,
+                          long wordCount,
+                          OffsetDateTime lastOpenedAt,
+                          OffsetDateTime createdAt
+){}

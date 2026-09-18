@@ -9,6 +9,13 @@ const router = createRouter({
       name: 'home',
       component: HomeView,
     },
+    {
+      path: '/libraries',
+      name: 'libraries',
+      // 懒加载：只有访问这个路由时才去下载对应的代码块。
+      // 首页不 import 它，首屏就少加载一个组件
+      component: () => import('@/views/LibraryView.vue'),
+    },
   ],
 })
 

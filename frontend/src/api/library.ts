@@ -28,4 +28,8 @@ export const libraryApi = {
    * 所以这里第二个泛型才是我们真正拿到的东西。
    */
   list: () => http.get<unknown, Library[]>('/libraries'),
+  create: (data: {path: string; name?: string}) =>
+    http.post<unknown, Library[]>('/libraries', data),
+  remove: (id:string) =>
+    http.delete<unknown, {id: string; removed: boolean; filesDeleted: boolean}>(`/libraries/${id}`),
 }

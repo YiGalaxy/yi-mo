@@ -1261,6 +1261,25 @@ export interface ApiError {
   timestamp?: string
 }
 
+/**
+ * 把 catch 到的未知错误转成 ApiError。
+ *
+ * 为什么需要这个函数：
+ * - TypeScript 4.4+ 在 strict 模式下，catch 变量的类型是 unknown，不能直接当 ApiError 用
+ * - 写 `catch (e: any)` 会被 ESLint 的 @typescript-eslint/no-explicit-any 拦下
+ *
+ * 所以统一在这里做一次安全的类型收窄，业务代码里 `catch (e)` 之后调 toApiError(e) 即可。
+ */
+export function toApiError(e: unknown): ApiError {
+  if (e && typeof e === 'object' && 'error' in e && 'message' in e) {
+    return e as ApiError
+  }
+  return {
+    error: 'UNKNOWN_ERROR',
+    message: e instanceof Error ? e.message : String(e),
+  }
+}
+
 http.interceptors.response.use(
   // 成功时直接返回数据体，调用方不用每次 .data.data
   (res) => res.data,
@@ -1888,11 +1907,11 @@ public record LibraryCreateRequest(
 
 ```ts
 export const libraryApi = {
-  list: () => http.get<any, Library[]>('/libraries'),
+  list: () => http.get<unknown, Library[]>('/libraries'),
   create: (data: { path: string; name?: string }) =>
-    http.post<any, Library>('/libraries', data),
+    http.post<unknown, Library>('/libraries', data),
   remove: (id: string) =>
-    http.delete<any, { id: string; removed: boolean; filesDeleted: boolean }>(`/libraries/${id}`),
+    http.delete<unknown, { id: string; removed: boolean; filesDeleted: boolean }>(`/libraries/${id}`),
 }
 ```
 
@@ -1905,6 +1924,7 @@ export const libraryApi = {
 import { ref, onMounted } from 'vue'
 import { NCard, NButton, NModal, NInput, NList, NListItem, NEmpty, useMessage } from 'naive-ui'
 import { libraryApi, type Library } from '@/api/library'
+import { toApiError } from '@/api/http'
 
 const message = useMessage()
 const libraries = ref<Library[]>([])
@@ -1925,8 +1945,8 @@ async function submit() {
     showDialog.value = false
     newPath.value = ''
     await load()
-  } catch (e: any) {
-    message.error(e?.message ?? '添加失败')
+  } catch (e) {
+    message.error(toApiError(e).message)
   } finally {
     submitting.value = false
   }
@@ -2012,8 +2032,8 @@ async function remove(id: string) {
     await libraryApi.remove(id)
     message.success('已移除（磁盘文件未删除）')
     await load()
-  } catch (e: any) {
-    message.error(e?.message ?? '移除失败')
+  } catch (e) {
+    message.error(toApiError(e).message)
   }
 }
 ```
@@ -2317,6 +2337,8 @@ Service 里实现幂等 + 冲突检测，见 `07-implementation.md` §6。
 
 ### 前端
 
+下面是自动保存的核心逻辑（片段，放在编辑器组件里）。注意 `toApiError` 要从 `@/api/http` 导入。
+
 ```ts
 let timer: number | null = null
 
@@ -2333,8 +2355,9 @@ async function save(md: string) {
     })
     currentHash.value = res.contentHash
     saveState.value = 'saved'
-  } catch (e: any) {
-    if (e?.error === 'CONTENT_HASH_MISMATCH') {
+  } catch (e) {
+    const err = toApiError(e)
+    if (err.error === 'CONTENT_HASH_MISMATCH') {
       // 弹窗让作者选：用我的 / 用文件里的
     } else {
       saveState.value = 'error'
