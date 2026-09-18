@@ -2998,69 +2998,281 @@ cd D:/Project/yi-mo/backend
 mvn test -Dtest=FrontmatterCodecTest
 ```
 
-**3. 扫描服务**（`com/yimo/service/ScanService.java`）
+**3. 扫描服务**
+
+#### 扫描要做什么
+
+用户添加书库后，亿墨要遍历那个文件夹，把里面的 `.md` 找出来、解析、判断类型、写进数据库。这样左侧的章节树才有东西显示。
+
+```
+书库文件夹
+├── 剑来/
+│   ├── 07-正文/
+│   │   ├── 第001章-雪夜.md     ← 解析出 title/order/volume，写进 chapter 表
+│   │   └── 第002章-泥瓶巷.md
+│   └── 03-人物/
+│       └── 陈平安.md           ← 这是人物卡，不是章节，跳过
+└── 长夜余火/
+    └── 07-正文/...
+```
+
+#### 三个必须处理好的点
+
+**1. 单个文件失败不能中断整个扫描**
+
+作者的目录里可能混着各种东西，或者某个文件正被 Typora 独占打开（Windows 会抛 `FileSystemException`）。
+
+如果遇到一个坏文件就整个扫描失败，用户会觉得「这软件连我的文件夹都读不了」。
+
+正确做法：**记下错误继续扫**，扫完把错误清单展示出来。
+
+**2. 限制遍历深度**
+
+`Files.walk(root)` 不传深度参数会无限递归。如果用户把书库指向一个装了 `node_modules` 的目录，会直接卡死。
+
+设个上限——书库结构是「书/目录/文件.md」这种浅层，8 层绰绰有余。
+
+**3. 读文件必须指定 UTF-8**
+
+`Files.readString(path)` 不传编码时用**系统默认编码**。Windows 中文环境下可能是 GBK，读 UTF-8 的稿子会全是乱码。
+
+这个坑很隐蔽——代码在 macOS 或 Linux 上完全正常，一到 Windows 就出问题。
+
+#### 写代码
+
+新建 `backend/src/main/java/com/yimo/service/ScanService.java`：
 
 ```java
+package com.yimo.service;
+
+import cn.hutool.core.util.HashUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.yimo.common.BizException;
+import com.yimo.common.ErrorCode;
+import com.yimo.common.Ids;
+import com.yimo.domain.Chapter;
+import com.yimo.mapper.ChapterMapper;
+import com.yimo.storage.DocType;
+import com.yimo.storage.FrontmatterCodec;
+import com.yimo.storage.ParsedMarkdown;
+import com.yimo.storage.TypeInferrer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Stream;
+
 @Service
 public class ScanService {
 
     private static final Logger log = LoggerFactory.getLogger(ScanService.class);
+
+    /** 遍历深度上限。不设的话，指向含 node_modules 的目录会无限递归 */
     private static final int MAX_DEPTH = 8;
 
     private final ChapterMapper chapterMapper;
     private final FrontmatterCodec codec;
 
+    public ScanService(ChapterMapper chapterMapper, FrontmatterCodec codec) {
+        this.chapterMapper = chapterMapper;
+        this.codec = codec;
+    }
+
+    /**
+     * 扫描整个书库，把章节写进数据库。
+     *
+     * @param libraryId 书库 id
+     * @param root      书库根目录
+     * @return 文件总数、成功索引数、失败清单
+     */
     public ScanResult scan(String libraryId, Path root) {
-        List<String> errors = new ArrayList<>();
-        int count = 0;
+        List<Path> files;
 
+        // try-with-resources：Stream 用完必须关闭，否则会一直占着文件句柄，
+        // 后面想重命名或删除文件时会失败
         try (Stream<Path> stream = Files.walk(root, MAX_DEPTH)) {
-            List<Path> files = stream
-                .filter(Files::isRegularFile)
-                .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".md"))
-                .toList();
-
-            for (Path file : files) {
-                try {
-                    if (indexFile(libraryId, root, file)) count++;
-                } catch (Exception e) {
-                    // 单个文件失败不能中断整个扫描
-                    log.warn("跳过文件 {}: {}", file, e.getMessage());
-                    errors.add(root.relativize(file).toString());
-                }
-            }
+            files = stream
+                    // 只要普通文件（跳过目录、符号链接）
+                    .filter(Files::isRegularFile)
+                    // 只看 .md。toLowerCase 是为了兼容 .MD 这种大写扩展名
+                    .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".md"))
+                    .toList();
         } catch (IOException e) {
+            // 连根目录都遍历不了，这是致命错误，直接抛给上层的全局异常处理器
             throw new BizException(ErrorCode.FILE_READ_FAILED, "扫描失败: " + e.getMessage());
         }
 
-        return new ScanResult(files.size(), count, errors);
+        int indexed = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (Path file : files) {
+            try {
+                if (indexFile(libraryId, root, file)) {
+                    indexed++;
+                }
+            } catch (Exception e) {
+                // 关键：单个文件失败不能中断整个扫描。
+                // 注意这里捕获的是 Exception（宽），不是 IOException（窄）——
+                // 编码错误、解析错误、数据库错误都要兜住
+                log.warn("跳过文件 {}: {}", file, e.getMessage());
+                errors.add(root.relativize(file).toString());
+            }
+        }
+
+        log.info("扫描完成：共 {} 个文件，索引 {} 个章节，失败 {} 个",
+                files.size(), indexed, errors.size());
+
+        return new ScanResult(files.size(), indexed, errors);
     }
 
+    /**
+     * 解析并索引单个文件。
+     *
+     * @return true 表示这是章节并已入库；false 表示不是章节，跳过
+     */
     private boolean indexFile(String libraryId, Path root, Path file) throws IOException {
+        // 必须指定 UTF-8。不指定则用系统默认编码（Windows 上可能是 GBK），
+        // 读 UTF-8 的稿子会全是乱码
         String raw = Files.readString(file, StandardCharsets.UTF_8);
         ParsedMarkdown pm = codec.parse(raw);
 
+        // 判断文件类型。不是章节就直接返回，不走后面的写库逻辑
         DocType type = TypeInferrer.infer(file, pm.frontmatter(), root);
-        if (type != DocType.CHAPTER) return false;
+        if (type != DocType.CHAPTER) {
+            return false;
+        }
+
+        String relPath = relPath(root, file);
+        Map<String, Object> fm = pm.frontmatter();
 
         Chapter ch = new Chapter();
-        ch.setId(existingIdOrNew(libraryId, root, file));   // 保留已有 id
+        // 已经索引过的文件要沿用原来的 id。
+        // 换新 id 的话，挂在它上面的批注和快照全都会失联
+        ch.setId(findExistingId(libraryId, relPath).orElseGet(Ids::chapter));
         ch.setLibraryId(libraryId);
-        ch.setRelPath(root.relativize(file).toString().replace('\\', '/'));
+        ch.setRelPath(relPath);
         ch.setBookName(bookNameOf(root, file));
-        ch.setTitle(str(pm.frontmatter().get("title"), fileTitle(file)));
-        ch.setVolume(str(pm.frontmatter().get("volume"), ""));
-        ch.setSortOrder(parseOrder(file, pm.frontmatter()));
-        ch.setStatus(str(pm.frontmatter().get("status"), "draft"));
+        // frontmatter 里没写 title 时，退回用文件名当标题
+        ch.setTitle(stringOr(fm.get("title"), titleFromFileName(file)));
+        ch.setVolume(stringOr(fm.get("volume"), ""));
+        ch.setSortOrder(parseOrder(file, fm));
+        ch.setStatus(stringOr(fm.get("status"), "draft"));
         ch.setWordCount(countWords(pm.body()));
+        // 内容哈希：下次扫描时比对，内容没变就跳过重新解析
         ch.setContentHash(HashUtil.sha256Hex(pm.body()));
         ch.setUpdatedAt(LocalDateTime.now());
 
-        upsert(ch);
+        chapterMapper.insertOrUpdate(ch);
         return true;
+    }
+
+    // ===== 下面都是辅助方法 =====
+
+    /**
+     * 相对书库根的路径。
+     *
+     * 统一换成正斜杠：Windows 的 Path 会给出反斜杠，而反斜杠在 JSON 和
+     * 正则里都要转义，统一成正斜杠能让后面省很多事。
+     */
+    private String relPath(Path root, Path file) {
+        return root.relativize(file).toString().replace('\\', '/');
+    }
+
+    /** 书库根下的第一层目录名就是书名：书库/剑来/07-正文/xxx.md → 剑来 */
+    private String bookNameOf(Path root, Path file) {
+        Path relative = root.relativize(file);
+        return relative.getNameCount() > 1
+                ? relative.getName(0).toString()
+                : root.getFileName().toString();
+    }
+
+    /** 从文件名提取标题：第001章-雪夜.md → 第001章-雪夜 */
+    private String titleFromFileName(Path file) {
+        String name = file.getFileName().toString();
+        return name.endsWith(".md")
+                ? name.substring(0, name.length() - 3)
+                : name;
+    }
+
+    /** 取 frontmatter 里的值，取不到就用默认值 */
+    private String stringOr(Object value, String fallback) {
+        return value == null ? fallback : value.toString();
+    }
+
+    /**
+     * 排序序号。
+     *
+     * 优先用 frontmatter 里的 order；没有的话从文件名里的数字提取
+     * （第012章-xxx.md → 12）。这样作者手改文件名排序也能生效。
+     */
+    private int parseOrder(Path file, Map<String, Object> fm) {
+        Object order = fm.get("order");
+        if (order instanceof Number n) {
+            return n.intValue();
+        }
+
+        // 从文件名里找「第」和「章」之间的数字
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("第\\s*(\\d+)\\s*章")
+                .matcher(file.getFileName().toString());
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
+    }
+
+    /**
+     * 统计字数。
+     *
+     * 现在是简化版：去掉所有空白字符后的长度。
+     * 中文一个字算一个，英文单词会被按字母数算——精确统计留到以后的迭代。
+     */
+    private int countWords(String text) {
+        return text.replaceAll("\\s", "").length();
+    }
+
+    /** 查这个路径之前是否已经索引过，是的话返回原来的 id */
+    private Optional<String> findExistingId(String libraryId, String relPath) {
+        Chapter existing = chapterMapper.selectOne(
+                new LambdaQueryWrapper<Chapter>()
+                        .eq(Chapter::getLibraryId, libraryId)
+                        .eq(Chapter::getRelPath, relPath));
+        return existing == null ? Optional.empty() : Optional.of(existing.getId());
     }
 }
 ```
+
+再建一个 `ScanResult.java`（同样，一个文件一个 public 类）：
+
+```java
+package com.yimo.service;
+
+import java.util.List;
+
+/**
+ * 扫描结果。
+ *
+ * @param total    扫到的文件总数
+ * @param indexed  成功索引的章节数
+ * @param errors   解析失败的文件相对路径，会展示给作者
+ */
+public record ScanResult(int total, int indexed, List<String> errors) {
+}
+```
+
+**几个值得注意的地方**：
+
+**`insertOrUpdate`** 是 MyBatis-Plus 提供的方法：主键存在就更新，不存在就插入。不用自己写「先查再判断」。
+
+**`findExistingId` 先查一次数据库**，是为了沿用旧 id。这一步不能省——每次扫描都生成新 id 的话，作者之前处理过的批注会全部失联。
+
+**`relPath` 统一用正斜杠**。Windows 的 `Path.toString()` 给的是反斜杠，而反斜杠在 JSON 里要写成 `\\`、在正则里是转义符，一路都是麻烦。存进数据库时就统一成斜杠，读取时不用再转换。
 
 **4. 类型推断**（`com/yimo/storage/TypeInferrer.java`）
 
