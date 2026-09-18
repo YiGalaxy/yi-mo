@@ -76,7 +76,7 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
     ports:
-      - "127.0.0.1:3306:3306"
+      - "127.0.0.1:3308:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -96,7 +96,7 @@ volumes:
 |---|---|
 | `--character-set-server=utf8mb4` | 中文不乱码，生僻字能存 |
 | `TZ: Asia/Shanghai` | 写入时间不差 8 小时 |
-| `127.0.0.1:3306:3306` | 只监听本机，局域网里别人连不上你的数据库 |
+| `127.0.0.1:3308:3306` | 只监听本机，局域网里别人连不上你的数据库 |
 | `mysql-data` 卷 | 容器删了数据还在，稿子不会丢 |
 | `healthcheck` | 能判断数据库是不是真的就绪了 |
 
@@ -131,7 +131,7 @@ docker compose ps
 
 ```
 NAME         IMAGE       STATUS                    PORTS
-yimo-mysql   mysql:8.0   Up 40 seconds (healthy)   127.0.0.1:3306->3306/tcp
+yimo-mysql   mysql:8.0   Up 40 seconds (healthy)   127.0.0.1:3308->3306/tcp
 ```
 
 显示 `starting` 就等 10 秒再敲一次。**看到 `healthy` 才能往下走。**
@@ -190,7 +190,7 @@ docker compose logs -f mysql   # 看日志
 
 | 现象 | 原因 | 解决 |
 |---|---|---|
-| `port is already allocated` | 3306 被占用（本地装过 MySQL） | 把配置里的 `"127.0.0.1:3306:3306"` 改成 `"127.0.0.1:3307:3306"`，后端配置的端口也要跟着改成 3307 |
+| `port is already allocated` | 3308 也被别的程序占了 | 换成别的空闲端口，比如 `"127.0.0.1:3310:3306"`，后端配置里的端口同步改。查占用：`netstat -ano \| grep ":3308"` |
 | 一直显示 `starting` 超过 2 分钟 | 初始化失败 | `docker compose logs mysql` 看日志 |
 | 拉镜像卡住不动 | 网络问题 | Docker Desktop → Settings → Docker Engine，加国内镜像源 |
 
@@ -716,7 +716,7 @@ spring:
     name: yimo
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/yimo?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    url: jdbc:mysql://127.0.0.1:3308/yimo?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
     username: yimo
     password: yimo_dev_2026
     hikari:
@@ -839,7 +839,7 @@ docker compose exec mysql mysql -uyimo -pyimo_dev_2026 yimo
 | 项 | 值 |
 |---|---|
 | 主机 | `127.0.0.1` |
-| 端口 | `3306` |
+| 端口 | `3308` |
 | 数据库 | `yimo` |
 | 用户名 | `yimo` |
 | 密码 | `yimo_dev_2026` |
