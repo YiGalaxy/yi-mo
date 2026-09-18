@@ -1448,7 +1448,7 @@ export default router
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { pingApi, type PingResult } from '@/api/ping'
-import type { ApiError } from '@/api/http'
+import { toApiError, type ApiError } from '@/api/http'
 
 const ping = ref<PingResult | null>(null)
 const error = ref<ApiError | null>(null)
@@ -1460,7 +1460,10 @@ async function check() {
   try {
     ping.value = await pingApi.ping()
   } catch (e) {
-    error.value = e as ApiError
+    // 不要写 catch (e: any)，也不要写 e as ApiError——
+    // 前者违反 ESLint 的 no-explicit-any，后者是硬断言。
+    // 统一用 toApiError 做类型收窄
+    error.value = toApiError(e)
   } finally {
     loading.value = false
   }
