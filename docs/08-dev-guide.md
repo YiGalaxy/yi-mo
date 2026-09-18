@@ -889,7 +889,47 @@ CREATE TABLE library (
 DESC library;
 ```
 
-## 2.2 实体类
+## 2.2 引入 Lombok
+
+实体类需要 getter / setter，但一个字段配两个方法，写起来又长又没营养。用 Lombok 自动生成。
+
+**第 1 步：加依赖**
+
+`backend/pom.xml` 的 `<dependencies>` 里加：
+
+```xml
+<!-- 样板代码消除。版本由 Spring Boot 的 parent 管理，不需要写 -->
+<dependency>
+    <groupId>org.projectlombok</groupId>
+    <artifactId>lombok</artifactId>
+    <optional>true</optional>
+</dependency>
+```
+
+`<optional>true</optional>` 表示这个依赖不传递给引用本项目的下游。
+
+**第 2 步：让打包时排除它**
+
+Lombok 只在**编译期**工作（生成代码），运行期完全用不到。所以打出的 jar 里不该包含它。
+
+同一个 pom 的 `<build>` 里：
+
+```xml
+<plugin>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-maven-plugin</artifactId>
+    <configuration>
+        <excludes>
+            <exclude>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+            </exclude>
+        </excludes>
+    </configuration>
+</plugin>
+```
+
+**第 3 步：写实体类**
 
 新建 `com/yimo/domain/Library.java`：
 
@@ -899,58 +939,52 @@ package com.yimo.domain;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 书库。一个书库 = 磁盘上的一个文件夹，里面装着若干本书。
+ */
+@Data
 @TableName("library")
 public class Library {
 
-    @TableId(type = IdType.INPUT)      // ID 由我们自己生成（ULID），不由数据库自增
+    /** INPUT 表示主键由我们自己的代码赋值（这里用 ULID），不是数据库自增 */
+    @TableId(type = IdType.INPUT)
     private String id;
 
     private String name;
     private String path;
     private LocalDateTime lastOpened;
     private LocalDateTime createdAt;
-
-    // ===== getter / setter =====
-    // 不能省。IDEA 里光标放在类里按 Alt+Insert → Getter and Setter 自动生成
-
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
-
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-
-    public String getPath() { return path; }
-    public void setPath(String path) { this.path = path; }
-
-    public LocalDateTime getLastOpened() { return lastOpened; }
-    public void setLastOpened(LocalDateTime lastOpened) { this.lastOpened = lastOpened; }
-
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }
 ```
 
+**`@Data` 在编译时生成**：所有字段的 getter / setter，以及 `toString` / `equals` / `hashCode`。
+
 **用普通类不用 record**：MyBatis-Plus 需要无参构造函数和 setter。record 是不可变的，不适合做数据库实体。
 
-**DTO 用 record，实体用普通类。** 这是清晰的分工。
+**DTO 用 record，实体用普通类。** 这是清晰的分工——只有实体需要 Lombok。
 
 ### 为什么 getter / setter 不能省
 
-省掉会得到一个非常诡异的现象：**接口返回 200，但内容是 `[{}]`**——数组里确实有元素，字段却全是空的。
+`@Data` 挡在前面，你很难再犯这个错。但**必须知道它挡住的是什么**——这个 bug 极其阴险：
+
+**现象**：接口返回 200，内容是 `[{}]`。数组里确实有元素，字段却全是空的。
 
 | 缺什么 | 后果 |
 |---|---|
-| 缺 getter | Jackson 序列化成 JSON 时只认 getter，读不到的字段直接不输出。这就是 `[{}]` 的来源 |
+| 缺 getter | Jackson 序列化成 JSON 时**只认 getter**，读不到的字段直接不输出。这就是 `[{}]` 的来源 |
 | 缺 setter | MyBatis 从数据库读结果时写不进对象，字段全是 null |
 
-**这个 bug 不报错、不抛异常**，只是数据凭空消失，第一次遇到很难往这个方向想。
+**它不报错、不抛异常、日志里什么都没有**，数据就这么凭空消失了。第一次遇到根本想不到是这个原因。
 
-**IDEA 里不用手敲**：光标放在类名上，按 `Alt + Insert` → `Getter and Setter` → 全选字段 → 确定。
+**IDEA 里确认 Lombok 生效**：写完后 `Build → Recompile`，然后 `View → Show Bytecode`，能看到生成出来的 getter。
 
-**另一种办法是 Lombok**：加依赖后在类上加 `@Data`，编译时自动生成。代价是代码里看不到这些方法，调试时容易困惑。学习阶段建议先手写，理解清楚了再用。
+**IDEA 需要开注解处理**：`Settings → Build, Execution, Deployment → Compiler → Annotation Processors`，勾选 `Enable annotation processing`。新版 IDEA 装好 Lombok 插件后默认就是开的。
+
+**不用 Lombok 的话**：光标放在类名上按 `Alt + Insert` → `Getter and Setter` → 全选字段 → 确定，效果一样，只是代码里多几十行。
 
 ## 2.3 Mapper
 

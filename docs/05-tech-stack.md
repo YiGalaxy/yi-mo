@@ -22,13 +22,14 @@
 |---|---|---|
 | Java | 21 (LTS) | 语言 |
 | Spring Boot | 4.1.1 | 应用框架 |
-| Spring Web | — | REST 接口 |
+| Spring WebMVC | — | REST 接口（Boot 4 里叫 `starter-webmvc`） |
 | Spring AI | 2.0.1 | 大模型调用与工具编排 |
 | MyBatis-Plus | 3.5.17 | 数据库访问 |
 | MySQL | 8.0+ | 索引、批注、统计、任务 |
 | H2 | 2.x | 内嵌兜底（免装 MySQL） |
 | HanLP | portable 版 | 中文分词、人名识别 |
 | Hutool | 5.8.47 | 工具集（文件、字符串、编码） |
+| Lombok | 由 Boot 管理 | 消除实体类的 getter/setter 样板代码 |
 | SSE (`SseEmitter`) | — | 流式推送 |
 
 ### Python（后置，先留接口）

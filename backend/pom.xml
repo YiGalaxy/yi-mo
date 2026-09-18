@@ -60,6 +60,14 @@
 			<version>${hutool.version}</version>
 		</dependency>
 
+		<!-- ===== 样板代码消除 ===== -->
+		<!-- 版本由 Spring Boot 的 parent 统一管理，不需要指定 -->
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<optional>true</optional>
+		</dependency>
+
 		<!-- ===== 测试 ===== -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -73,6 +81,15 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<!-- Lombok 只在编译期生成代码，打出的 jar 里不需要它 -->
+						<exclude>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+						</exclude>
+					</excludes>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>
