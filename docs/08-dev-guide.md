@@ -1237,50 +1237,106 @@ http://localhost:5173/api/libraries
 
 ## 3.4 封装 axios
 
-新建 `frontend/src/api/http.ts`：
+### `src/api/http.ts`
 
 ```ts
 import axios from 'axios'
 
+/**
+ * 统一的 HTTP 客户端。
+ *
+ * baseURL 是相对路径 '/api'，开发时由 Vite 代理转发到后端，
+ * 生产时前后端同源。不要在这里写死完整域名。
+ */
 export const http = axios.create({
   baseURL: '/api',
   timeout: 30000,
 })
 
-// 响应拦截：成功直接返回数据体，失败统一提示
+/** 后端返回的统一错误体，格式见 docs/06-api.md */
+export interface ApiError {
+  error: string
+  message: string
+  details?: Record<string, unknown>
+  timestamp?: string
+}
+
 http.interceptors.response.use(
+  // 成功时直接返回数据体，调用方不用每次 .data.data
   (res) => res.data,
   (err) => {
-    const e = err.response?.data
-    console.error('[API]', e ?? err.message)
-    return Promise.reject(e ?? { error: 'NETWORK_ERROR', message: '网络错误' })
+    const body = err.response?.data as ApiError | undefined
+    const apiError: ApiError = body ?? {
+      error: 'NETWORK_ERROR',
+      message: '无法连接后端服务，请确认它正在运行',
+    }
+    console.error('[API]', apiError.error, apiError.message)
+    return Promise.reject(apiError)
   },
 )
 ```
 
-**`http.get(...)` 的返回值直接就是数据**，不用每次 `.data.data`。
+**拦截器做了两件事**：
 
-新建 `frontend/src/api/library.ts`：
+- 成功时把 `res.data` 拆出来直接返回，所以 `http.get(...)` 拿到的就是数据本身，不用写 `.data.data`
+- 失败时统一包装成 `ApiError`，调用方只需要 `catch (e) { e.message }`
+
+### `src/api/ping.ts`
 
 ```ts
 import { http } from './http'
 
+export interface PingResult {
+  ok: boolean
+  service: string
+  time: string
+  sampleId: string
+}
+
+export const pingApi = {
+  /** 健康检查。返回的 sampleId 可以顺便验证 ULID 生成是否正常 */
+  ping: () => http.get<unknown, PingResult>('/ping'),
+}
+```
+
+**泛型为什么是两个**：axios 的签名是 `get<T, R>()`，`T` 是响应体类型，`R` 是返回值类型。因为拦截器改了返回值，我们真正拿到的是 `R`，所以第二个泛型才关键。第一个写 `unknown` 表示不关心原始响应体类型。
+
+### `src/api/library.ts`
+
+```ts
+import { http } from './http'
+
+/**
+ * 书库。
+ *
+ * 字段名必须和后端返回的 JSON 完全一致——
+ * 后端返回 lastOpened，这里写成 lastOpenedAt 就会拿到 undefined。
+ */
 export interface Library {
   id: string
   name: string
   path: string
   bookCount?: number
   wordCount?: number
-  lastOpenedAt: string | null
-  createdAt: string
+  lastOpened?: string | null
+  createdAt?: string | null
 }
 
 export const libraryApi = {
-  list: () => http.get<any, Library[]>('/libraries'),
+  /** 路径写 '/libraries' 而不是 '/api/libraries'——baseURL 已经带了 /api */
+  list: () => http.get<unknown, Library[]>('/libraries'),
+
+  create: (data: { path: string; name?: string }) =>
+    http.post<unknown, Library>('/libraries', data),
+
+  remove: (id: string) =>
+    http.delete<unknown, { id: string; removed: boolean; filesDeleted: boolean }>(
+      `/libraries/${id}`,
+    ),
 }
 ```
 
-**注意 `http.get<any, Library[]>`**：axios 的类型定义里第二个泛型才是返回值类型。因为拦截器改了返回值，第一个泛型要写 `any`。
+三个方法对应后端的三个接口。`list` 现在就能用（后端已有），`create` 和 `remove` 等做到迭代 1 时再写后端。
 
 ## 3.5 第一个页面
 
@@ -1305,7 +1361,31 @@ src/
 └── main.ts
 ```
 
-### 第 2 步：`App.vue` 只留一个路由出口
+### 第 2 步：改页面标题
+
+脚手架生成的是 `<title>Vite App</title>`，浏览器标签页上显示这个很奇怪。
+
+编辑 `frontend/index.html`：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>亿墨 YI-MO</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+```
+
+改了两处：`lang="en"` → `lang="zh-CN"`（告诉浏览器这是中文页面，影响字体渲染和断行规则），标题改成「亿墨 YI-MO」。
+
+### 第 3 步：`App.vue` 只留一个路由出口
 
 ```vue
 <script setup lang="ts">
@@ -1319,7 +1399,7 @@ import { RouterView } from 'vue-router'
 
 **为什么要这样拆**：`App.vue` 是整个应用的根容器，管的是整体布局（将来的左侧项目树、顶部工具栏都放这）。具体页面放在 `views/` 下，由路由决定显示哪个。混在一起的话，加第二个页面时就要大改。
 
-### 第 3 步：路由指向首页
+### 第 4 步：路由指向首页
 
 编辑 `frontend/src/router/index.ts`：
 
@@ -1341,7 +1421,7 @@ const router = createRouter({
 export default router
 ```
 
-### 第 4 步：写首页
+### 第 5 步：写首页
 
 `frontend/src/views/HomeView.vue`：
 
@@ -1369,9 +1449,67 @@ async function check() {
 
 onMounted(check)
 </script>
+
+<template>
+  <div class="min-h-screen bg-neutral-50 flex items-center justify-center p-8">
+    <div class="w-full max-w-lg">
+      <h1 class="text-2xl font-semibold text-neutral-800">亿墨 YI-MO</h1>
+      <p class="text-sm text-neutral-500 mt-1 mb-6">
+        本地优先、零注册、Agent 增强的小说创作工作台
+      </p>
+
+      <!-- 加载中 -->
+      <div v-if="loading" class="text-sm text-neutral-500">正在连接后端…</div>
+
+      <!-- 连接失败 -->
+      <div v-else-if="error" class="rounded-lg border border-red-200 bg-red-50 p-4">
+        <p class="text-sm font-medium text-red-800">后端连接失败</p>
+        <p class="text-xs text-red-600 font-mono mt-1">{{ error.error }}</p>
+        <p class="text-xs text-red-600 mt-1">{{ error.message }}</p>
+        <p class="text-xs text-red-500 mt-3 leading-relaxed">
+          确认后端已启动：<br />
+          <code class="bg-red-100 px-1 rounded">cd backend &amp;&amp; mvn spring-boot:run</code>
+        </p>
+        <button
+          class="mt-3 text-xs px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-100"
+          @click="check"
+        >
+          重试
+        </button>
+      </div>
+
+      <!-- 连接成功 -->
+      <div v-else-if="ping" class="rounded-lg border border-green-200 bg-green-50 p-4">
+        <p class="text-sm font-medium text-green-800 mb-3">前后端已连通</p>
+        <dl class="text-xs text-green-700 font-mono space-y-1.5">
+          <div class="flex gap-3">
+            <dt class="w-20 text-green-600 shrink-0">service</dt>
+            <dd>{{ ping.service }}</dd>
+          </div>
+          <div class="flex gap-3">
+            <dt class="w-20 text-green-600 shrink-0">server time</dt>
+            <dd>{{ ping.time }}</dd>
+          </div>
+          <div class="flex gap-3">
+            <dt class="w-20 text-green-600 shrink-0">sample id</dt>
+            <dd>{{ ping.sampleId }}</dd>
+          </div>
+        </dl>
+        <p class="text-xs text-green-600 mt-3 leading-relaxed">
+          sample id 是后端生成的 ULID（26 字符 + 类型前缀）。<br />
+          如果它看起来正常，说明 ID 生成、JSON 序列化、跨域代理都通了。
+        </p>
+      </div>
+
+      <p class="text-xs text-neutral-400 mt-8">
+        下一步：迭代 1 书库管理 —— 添加一个文件夹，让它出现在列表里。
+      </p>
+    </div>
+  </div>
+</template>
 ```
 
-模板部分就是个三态展示：加载中 / 出错 / 成功。用 `fetch` 或 axios 拿到 `/api/ping` 的结果显示出来。
+这个页面用 Tailwind 的类名排版，顺带验证了 Tailwind 接入是否成功——如果样式没生效，说明 §3.2 的 `@import 'tailwindcss'` 或 §3.3 的插件没配好。
 
 **这一步的目的是验证链路，不是做界面。** 等迭代 1 做书库管理时，这个页面会被真正的界面替换掉。
 
@@ -1560,7 +1698,8 @@ public final class Ids {
 void ulidIsMonotonic() {
     String a = Ids.chapter();
     String b = Ids.chapter();
-    assertThat(a).startsWith("ch_").hasSize(30);
+    // 29 = 前缀 "ch_" 的 3 个字符 + ULID 本身的 26 个字符
+    assertThat(a).startsWith("ch_").hasSize(29);
     assertThat(a.compareTo(b)).isLessThan(0);   // 单调递增，可按创建时间排序
 }
 ```
