@@ -1496,13 +1496,26 @@ http.interceptors.response.use(
 ```ts
 import { http } from './http'
 
+/**
+ * 后端 /api/ping 返回的数据。
+ *
+ * interface 是 TypeScript 用来描述「一个对象长什么样」的语法。
+ * 它只在编译期存在，运行时会被完全擦除——
+ * 所以它不会让代码变慢，只是帮你在写代码时发现错误。
+ */
 export interface PingResult {
   ok: boolean
   service: string
-  time: string
-  sampleId: string
+  time: string       // ISO 8601 格式的字符串，如 2026-09-18T20:30:00+08:00
+  sampleId: string   // 后端生成的一个示例 ULID
 }
 
+/**
+ * 把接口按业务分组导出，而不是一个个散着写。
+ *
+ * 好处是调用时能看出分组：pingApi.ping()、libraryApi.list()，
+ * 而且 IDE 里输入 pingApi. 会自动列出这组下所有方法。
+ */
 export const pingApi = {
   /** 健康检查。返回的 sampleId 可以顺便验证 ULID 生成是否正常 */
   ping: () => http.get<unknown, PingResult>('/ping'),
@@ -2200,6 +2213,34 @@ class IdsTest {
 
 **这是整个项目最不能出错的地方。** 所有涉及用户输入的路径，必须校验解析后的位置仍在书库根目录内。
 
+**先说清楚这个类防的是什么。**
+
+亿墨的接口会接收用户传的路径，比如「读取 `剑来/07-正文/第001章.md`」。这个路径是相对于书库根目录的，拼起来是：
+
+```
+D:\我的小说\  +  剑来/07-正文/第001章.md
+```
+
+但如果用户（或者某个被篡改的前端）传的是：
+
+```
+../../Windows/System32/config
+```
+
+拼起来就变成了：
+
+```
+D:\我的小说\..\..\Windows\System32\config
+        ↑ 往上退两级
+= C:\Windows\System32\config
+```
+
+**程序会去读写书库目录之外的文件**——这就是「路径穿越攻击」。
+
+对亿墨来说，本地单用户场景下被攻击的概率不高，但**写错路径导致误删用户文件**的风险是真实存在的。所以这个校验必须有。
+
+新建 `backend/src/main/java/com/yimo/storage/PathGuard.java`：
+
 ```java
 package com.yimo.storage;
 
@@ -2208,43 +2249,107 @@ import com.yimo.common.ErrorCode;
 
 import java.nio.file.Path;
 
+/**
+ * 路径安全守卫。
+ *
+ * <p>所有由用户输入拼出来的路径都必须经过这里，
+ * 防止 {@code ../} 穿越到书库目录之外。
+ *
+ * <p>这是整个项目最不能出错的一处——它守的是用户磁盘上其他文件的安全。
+ */
 public final class PathGuard {
 
+    /** 工具类，不允许实例化 */
     private PathGuard() {}
 
     /**
-     * 把相对路径解析成安全绝对路径。越界直接抛异常。
+     * 把相对路径解析成书库内的安全绝对路径。越界直接抛异常。
+     *
+     * @param root     书库根目录
+     * @param relative 相对书库根的路径，可能来自用户输入
+     * @return 规范化后的绝对路径
+     * @throws BizException 路径越界时
      */
     public static Path resolve(Path root, String relative) {
+        // toAbsolutePath()：把相对路径变成绝对路径，
+        // 否则后面的 startsWith 比较基准不一致
+        // normalize()：解析掉路径里的 . 和 ..，
+        // "D:\小说\..\..\Windows" 会被化简成 "D:\Windows"
         Path normalizedRoot = root.toAbsolutePath().normalize();
+
+        // 拼接后同样要 normalize——关键就在这一步，
+        // 如果相对路径里有 ..，normalize 之后就会跑到 root 外面去
         Path target = normalizedRoot.resolve(relative).normalize();
 
+        // 检查解析结果是否仍在书库目录内。
+        // normalize 之后还 startsWith(root)，说明没有跑出去
         if (!target.startsWith(normalizedRoot)) {
             throw new BizException(ErrorCode.PATH_OUT_OF_BOUNDS,
-                "路径越界: " + relative);
+                    "路径越界: " + relative);
         }
         return target;
     }
 }
 ```
 
-**验证**（这是安全测试，必须写）：
+#### 验证
+
+**安全相关的代码必须有测试，而且这个测试要一直存在**——后面任何改动都不能让它变红。
+
+新建 `backend/src/test/java/com/yimo/storage/PathGuardTest.java`：
 
 ```java
-@Test
-void blocksPathTraversal() {
-    Path root = Path.of("D:/Writing/小说");
+package com.yimo.storage;
 
-    assertThatThrownBy(() -> PathGuard.resolve(root, "../../Windows/System32/config"))
-        .isInstanceOf(BizException.class)
-        .hasMessageContaining("路径越界");
+import com.yimo.common.BizException;
+import org.junit.jupiter.api.Test;
 
-    assertThat(PathGuard.resolve(root, "剑来/07-正文/第001章.md"))
-        .isEqualTo(Path.of("D:/Writing/小说/剑来/07-正文/第001章.md"));
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class PathGuardTest {
+
+    private final Path root = Path.of("D:/Writing/小说");
+
+    @Test
+    void blocksParentDirectoryTraversal() {
+        // 这是最典型的攻击方式：用 .. 往上退到书库外面
+        BizException ex = assertThrows(BizException.class,
+                () -> PathGuard.resolve(root, "../../Windows/System32/config"));
+
+        assertTrue(ex.getMessage().contains("路径越界"),
+                "应提示路径越界，实际: " + ex.getMessage());
+    }
+
+    @Test
+    void blocksAbsolutePathEscape() {
+        // 直接传绝对路径也不能绕过检查
+        assertThrows(BizException.class,
+                () -> PathGuard.resolve(root, "/etc/passwd"));
+    }
+
+    @Test
+    void allowsNormalRelativePath() {
+        Path expected = Path.of("D:/Writing/小说/剑来/07-正文/第001章.md").normalize();
+        Path actual = PathGuard.resolve(root, "剑来/07-正文/第001章.md").normalize();
+
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void allowsInnerParentReference() {
+        // 中间的回退只要没越出根目录就合法，不该拦。
+        // 比如作者在书库里点了个「上一级」再进别的目录
+        Path result = PathGuard.resolve(root, "剑来/07-正文/../03-人物/陈平安.md").normalize();
+
+        assertTrue(result.startsWith(root.toAbsolutePath().normalize()));
+        assertTrue(result.toString().endsWith("陈平安.md"));
+    }
 }
 ```
-
-**这个测试要一直存在。** 后面任何改动都不能让它变红。
 
 ---
 
@@ -2781,41 +2886,57 @@ export const libraryApi = {
 ```vue
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+// 从 naive-ui 按需引入用到的组件。
+// 组件名在模板里要写成 kebab-case：NButton → <n-button>
 import { NCard, NButton, NModal, NInput, NList, NListItem, NEmpty, useMessage } from 'naive-ui'
 import { libraryApi, type Library } from '@/api/library'
 import { toApiError } from '@/api/http'
 
+// useMessage() 拿到弹提示消息的能力。
+// 前提是外层有 <n-message-provider>（见 App.vue），否则运行时报错
 const message = useMessage()
-const libraries = ref<Library[]>([])
-const showDialog = ref(false)
-const newPath = ref('')
-const submitting = ref(false)
 
+// ===== 组件状态 =====
+const libraries = ref<Library[]>([])   // 书库列表
+const showDialog = ref(false)          // 添加弹窗是否显示
+const newPath = ref('')                // 输入框里的路径
+const submitting = ref(false)          // 是否正在提交（用来禁用按钮、显示转圈）
+
+/** 从后端拉取书库列表 */
 async function load() {
   libraries.value = await libraryApi.list()
 }
 
+/** 提交「添加书库」 */
 async function submit() {
+  // 前置校验：路径为空直接返回，不发请求
   if (!newPath.value.trim()) return
+
   submitting.value = true
   try {
     await libraryApi.create({ path: newPath.value.trim() })
     message.success('书库已添加')
+
+    // 成功后：关弹窗、清空输入框、刷新列表
     showDialog.value = false
     newPath.value = ''
     await load()
   } catch (e) {
+    // 失败时保留弹窗和输入内容，让用户可以改一下重试
     message.error(toApiError(e).message)
   } finally {
+    // 无论成败都要把按钮恢复成可点状态
     submitting.value = false
   }
 }
 
+// 组件挂载后立刻加载列表
 onMounted(load)
 </script>
 
 <template>
   <div class="p-6 max-w-2xl mx-auto">
+    <!-- 顶部：标题 + 添加按钮 -->
     <div class="flex items-center justify-between mb-5">
       <h2 class="text-lg font-medium text-neutral-800">书库</h2>
       <n-button type="primary" size="small" @click="showDialog = true">
@@ -2823,17 +2944,24 @@ onMounted(load)
       </n-button>
     </div>
 
+    <!-- 空状态：一个书库都没有时显示 -->
     <n-empty
       v-if="libraries.length === 0"
       description="还没有书库，添加一个文件夹开始吧"
       class="py-16"
     />
 
+    <!-- 列表 -->
     <n-list v-else bordered>
+      <!--
+        v-for 遍历数组渲染，:key 是必须的——
+        Vue 靠它识别「哪一项是哪一项」，没有的话列表增删时会渲染错乱
+      -->
       <n-list-item v-for="lib in libraries" :key="lib.id">
         <div class="flex items-center justify-between">
           <div class="min-w-0">
             <div class="text-sm font-medium text-neutral-800">{{ lib.name }}</div>
+            <!-- truncate 让过长的路径省略号截断，不然会把布局撑破 -->
             <div class="text-xs text-neutral-500 font-mono truncate mt-0.5">
               {{ lib.path }}
             </div>
@@ -2843,6 +2971,8 @@ onMounted(load)
       </n-list-item>
     </n-list>
 
+    <!-- 添加书库的弹窗 -->
+    <!-- v-model:show 是双向绑定：点遮罩关闭时，showDialog 会自动变回 false -->
     <n-modal v-model:show="showDialog">
       <n-card
         style="width: 520px"
@@ -2853,11 +2983,14 @@ onMounted(load)
         <p class="text-xs text-neutral-500 mb-3">
           填写一个文件夹的完整路径。亿墨会把它当作书库，里面的每个子文件夹是一本书。
         </p>
+
         <n-input
           v-model:value="newPath"
           placeholder="D:\我的小说"
           @keyup.enter="submit"
         />
+
+        <!-- #footer 是具名插槽，内容会被放到卡片的底部区域 -->
         <template #footer>
           <div class="flex justify-end gap-2">
             <n-button size="small" @click="showDialog = false">取消</n-button>
@@ -2886,9 +3019,12 @@ onMounted(load)
 - 列表里的移除按钮调 `remove(lib.id)`，你需要在 `<script>` 里补上这个函数：
 
 ```ts
+/** 移除书库 */
 async function remove(id: string) {
   try {
     await libraryApi.remove(id)
+    // 提示语特意说明「磁盘文件未删除」——
+    // 作者看到「移除」会担心文件被删了，这句话能打消顾虑
     message.success('已移除（磁盘文件未删除）')
     await load()
   } catch (e) {
@@ -2897,7 +3033,17 @@ async function remove(id: string) {
 }
 ```
 
-**Naive UI 的样式要额外接一下**。`main.ts` 里如果用 `useMessage()`，需要外层有 `<n-message-provider>` 包着，否则会报 `No outer <n-message-provider />`。最简单的做法是在 `App.vue` 里包一层：
+**Naive UI 的消息提示需要一层 Provider**。
+
+`useMessage()` 不是凭空拿到提示能力的——它需要从上层组件里「取」一个上下文。没有 `<n-message-provider>` 包着的话，运行时会直接抛：
+
+```
+No outer <n-message-provider /> founded.
+```
+
+页面白屏，而且错误信息不太直观。
+
+`App.vue` 是根组件，把 Provider 放在这里，所有页面都能用：
 
 ```vue
 <script setup lang="ts">
@@ -2906,6 +3052,13 @@ import { NMessageProvider } from 'naive-ui'
 </script>
 
 <template>
+  <!--
+    为什么 Provider 要放在最外层：
+    它通过 Vue 的 provide/inject 机制向下传递上下文，
+    只有包在它内部的组件才能用 useMessage() 拿到提示能力。
+
+    放在 RouterView 外面，所有路由页面就都在它的覆盖范围内
+  -->
   <n-message-provider>
     <RouterView />
   </n-message-provider>
@@ -2969,49 +3122,90 @@ public record PickDirectoryResponse(boolean picked, String path) {
 新建 `com/yimo/service/DirectoryPickerService.java`：
 
 ```java
+/**
+ * 弹出操作系统的原生文件夹选择窗口。
+ *
+ * <p>为什么这件事必须由后端做：浏览器出于安全考虑，不允许网页获取用户选择的
+ * 绝对路径。后端没有这个限制，可以直接调 Swing 的 JFileChooser。
+ *
+ * <p>代价是只在有图形界面的机器上有效。跑在 Docker 或无头服务器上时，
+ * GraphicsEnvironment.isHeadless() 为 true，会抛 PICKER_UNSUPPORTED，
+ * 前端降级为手动输入。
+ */
 @Service
 public class DirectoryPickerService {
 
     private static final Logger log = LoggerFactory.getLogger(DirectoryPickerService.class);
 
-    /** 同一时间只允许一个选择窗口，防止用户连点弹出多个 */
+    /**
+     * 信号量，初始值 1 表示「最多允许 1 个线程同时进入」。
+     *
+     * <p>作用：用户连点两下「浏览…」时，第二次请求会被挡住并返回「已有一个窗口打开」，
+     * 而不是弹出两个窗口。
+     */
     private final Semaphore semaphore = new Semaphore(1);
 
+    /**
+     * 弹出目录选择窗口，阻塞直到用户选择或取消。
+     *
+     * @param initialPath 打开时定位到的目录，可为 null
+     * @return 选中的绝对路径；用户点了取消则返回 empty
+     */
     public Optional<String> pickDirectory(String initialPath) {
+        // 先检查有没有图形界面。Docker、Linux 服务器上没有，
+        // 这时调 Swing 会直接抛 HeadlessException，不如提前拦住给出友好提示
         if (GraphicsEnvironment.isHeadless()) {
             throw new BizException(ErrorCode.PICKER_UNSUPPORTED);
         }
+
+        // tryAcquire 是「尝试获取，拿不到立刻返回 false」，不阻塞。
+        // 拿不到说明上一个窗口还开着，直接报错
         if (!semaphore.tryAcquire()) {
             throw new BizException(ErrorCode.PICKER_BUSY);
         }
 
         try {
+            // 用 AtomicReference 承接对话框的结果。
+            // 为什么不用普通变量：结果是写在 lambda 里的，
+            // Java 要求 lambda 里引用的局部变量必须是 final，
+            // AtomicReference 是可变的容器，绕开了这个限制
             AtomicReference<File> chosen = new AtomicReference<>();
 
             // JFileChooser 必须在事件调度线程（EDT）上创建和显示，
-            // 直接在 Tomcat 的请求线程里 new 会出各种诡异问题
+            // 直接在 Tomcat 的请求线程里 new 会出各种诡异问题。
+            // invokeAndWait 会阻塞当前线程，直到 EDT 上的代码执行完
             SwingUtilities.invokeAndWait(() -> {
                 useSystemLookAndFeel();
 
                 JFileChooser chooser = new JFileChooser();
+
+                // 只允许选目录，不能选文件
                 chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
                 chooser.setDialogTitle("选择书库文件夹");
+                // 去掉「所有文件」这个筛选器，反正只能选目录
                 chooser.setAcceptAllFileFilterUsed(false);
 
+                // 如果传了初始路径且它确实是个目录，就定位过去
                 File initial = toExistingDirectory(initialPath);
                 if (initial != null) {
                     chooser.setCurrentDirectory(initial);
                 }
 
+                // showOpenDialog 会阻塞 EDT，直到用户操作。
+                // 返回 APPROVE_OPTION 表示点了「确定」，CANCEL_OPTION 表示取消
                 if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
                     chosen.set(chooser.getSelectedFile());
                 }
             });
 
             File file = chosen.get();
+            // 用户点取消时 file 是 null，返回 empty 而不是报错。
+            // 「取消」是正常操作，不是错误
             return file == null ? Optional.empty() : Optional.of(file.getAbsolutePath());
 
         } catch (InterruptedException e) {
+            // 捕获中断异常时要恢复中断标记，这是 Java 的约定——
+            // 不恢复的话上层代码感知不到「有人要求我停下」
             Thread.currentThread().interrupt();
             throw new BizException(ErrorCode.PICKER_FAILED, "等待用户选择时被中断");
         } catch (InvocationTargetException e) {
@@ -3066,6 +3260,23 @@ public static void main(String[] args) {
 新建 `com/yimo/controller/SystemController.java`：
 
 ```java
+package com.yimo.controller;
+
+import com.yimo.dto.PickDirectoryRequest;
+import com.yimo.dto.PickDirectoryResponse;
+import com.yimo.service.DirectoryPickerService;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Optional;
+
+/**
+ * 与操作系统交互的接口。
+ *
+ * <p>这些接口只在本地运行时有意义——亿墨的定位就是本机工具。
+ */
 @RestController
 @RequestMapping("/api/system")
 public class SystemController {
@@ -3076,14 +3287,27 @@ public class SystemController {
         this.pickerService = pickerService;
     }
 
-    /** 弹出原生文件夹选择窗口。这个请求会阻塞到用户选完或取消 */
+    /**
+     * 弹出原生文件夹选择窗口。
+     *
+     * <p><b>这个请求会阻塞</b>，直到用户选完或取消——可能几十秒。
+     * 前端必须把超时设长或设为 0（不超时）。
+     *
+     * <p>{@code required = false} 让请求体可以省略。
+     * 不写的话，前端发一个空请求体会直接 400。
+     */
     @PostMapping("/pick-directory")
     public PickDirectoryResponse pickDirectory(
             @RequestBody(required = false) PickDirectoryRequest req) {
 
+        // req 可能是 null（前端没传 body），先兜住
         String initialPath = req != null ? req.initialPath() : null;
+
         Optional<String> picked = pickerService.pickDirectory(initialPath);
 
+        // Optional 转成「是否选中 + 路径」两个字段。
+        // 用 picked 布尔值而不是用 path 是否为 null 来判断，
+        // 是为了让前端的判断更明确：if (res.picked) { ... }
         return new PickDirectoryResponse(picked.isPresent(), picked.orElse(null));
     }
 }
@@ -3139,6 +3363,10 @@ async function browse() {
 模板里把输入框包成一组，右边挂按钮：
 
 ```vue
+<!--
+  n-input-group 把输入框和按钮拼成视觉上连体的一组，
+  比分开放两个元素好看，也暗示它们是一回事
+-->
 <n-input-group>
   <n-input
     v-model:value="newPath"
@@ -3190,23 +3418,49 @@ async function browse() {
 
 ```sql
 CREATE TABLE chapter (
+  -- 主键。跟 library 表一样是 ULID，不含 ch_ 前缀
   id            CHAR(26)     NOT NULL PRIMARY KEY,
+
+  -- 属于哪个书库。虽然可以从 rel_path 反推，
+  -- 但显式存一列，查询和删除时能直接用索引，不用做字符串处理
   library_id    CHAR(26)     NOT NULL,
+
+  -- 书名，取自书库根下的第一层目录名。
+  -- 冗余存储是为了「按书分组显示章节树」时不用每次都去解析路径
   book_name     VARCHAR(200) NOT NULL,
+
+  -- 相对书库根的路径，统一用正斜杠。
+  -- 这是定位磁盘文件的依据，也是重新扫描时判断「是不是同一个文件」的标准
   rel_path      VARCHAR(500) NOT NULL,
+
+  -- 下面这些都是从 frontmatter 里读的，允许为空——
+  -- 作者的 md 文件可能压根没写元数据，那就按文件名推断或留空
   title         VARCHAR(200),
   volume        VARCHAR(200),
   sort_order    INT,
-  status        VARCHAR(20)  DEFAULT 'draft',
+  status        VARCHAR(20)  DEFAULT 'draft',   -- draft / revising / done
   word_count    INT          DEFAULT 0,
-  content_hash  CHAR(64),
   pov           VARCHAR(200),
   story_time    VARCHAR(200),
+
+  -- 正文的 SHA-256 哈希（64 个十六进制字符）。
+  -- 用途：重新扫描时先比哈希，内容没变就跳过解析，100 万字的书库能省几十秒。
+  -- 也用于保存正文时检测「文件是不是被别的编辑器改过」
+  content_hash  CHAR(64),
+
   updated_at    DATETIME,
+
+  -- 同一个书库里，一个路径只能对应一条记录。
+  -- 重新扫描时会用到：靠这个唯一约束来判断「该插入还是该更新」
   UNIQUE KEY uk_library_path (library_id, rel_path),
+
+  -- 普通索引，给「按书分组、按序号排序」的查询用。
+  -- 章节树每次打开都要查，没索引的话书库大了会很慢
   KEY idx_order (library_id, book_name, sort_order)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
+
+**注意这里没有全文索引**。全文检索用的是另一张表（`chapter_content`），因为 MySQL 的 ngram 全文索引会让表变大不少，而大部分查询（列章节树、读元数据）根本用不到它。分开存更划算。
 
 **2. Frontmatter 解析器**
 
@@ -3407,10 +3661,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FrontmatterCodecTest {
 
+    // 被测对象直接 new，不用 Spring 容器——
+    // FrontmatterCodec 没有依赖，这样测试跑得最快
     private final FrontmatterCodec codec = new FrontmatterCodec();
 
+    /** 正常情况：有 frontmatter，字段能读出来，正文里不含元数据 */
     @Test
     void parsesNormalFrontmatter() {
+        // 文本块（Java 15+ 的 """ 语法）用来写多行字符串，
+        // 比用 \n 拼接清楚得多
         String raw = """
                 ---
                 title: 第一章 雪夜
@@ -3423,16 +3682,19 @@ class FrontmatterCodecTest {
         ParsedMarkdown pm = codec.parse(raw);
 
         assertEquals("第一章 雪夜", pm.frontmatter().get("title"));
-        assertEquals(1, pm.frontmatter().get("order"));
+        assertEquals(1, pm.frontmatter().get("order"));     // YAML 会把 1 解析成数字
+        // 正文里不该出现 --- 和 title，那部分要被剥掉
         assertTrue(pm.body().contains("正文内容"));
     }
 
+    /** 边界情况：作者直接写了个没有元数据头的 md 文件，不能报错 */
     @Test
     void handlesFileWithoutFrontmatter() {
         String raw = "　　这是一份没有元数据的文件。";
 
         ParsedMarkdown pm = codec.parse(raw);
 
+        // 返回空 Map 而不是 null——调用方就不用到处判空了
         assertTrue(pm.frontmatter().isEmpty());
         assertEquals(raw, pm.body());
     }
@@ -4085,33 +4347,47 @@ import { useRoute } from 'vue-router'
 import { chapterApi, type ChapterDetail } from '@/api/chapter'
 import { toApiError } from '@/api/http'
 
+// useRoute() 拿到当前路由信息。
+// 路由是 /chapters/:id，所以 route.params.id 就是地址里的那个 id
 const route = useRoute()
 
-const chapter = ref<ChapterDetail | null>(null)
-const loading = ref(false)
-const error = ref('')
+// ===== 组件状态 =====
+const chapter = ref<ChapterDetail | null>(null)   // 章节数据
+const loading = ref(false)                        // 是否在加载
+const error = ref('')                             // 错误消息（空串表示没错）
 
+/** 按 id 加载章节 */
 async function load(id: string) {
   loading.value = true
-  error.value = ''
+  error.value = ''          // 清掉上次的错误
   try {
     chapter.value = await chapterApi.get(id)
   } catch (e) {
     error.value = toApiError(e).message
-    chapter.value = null
+    chapter.value = null    // 加载失败时清空，避免显示上一个章节的残留内容
   } finally {
     loading.value = false
   }
 }
 
-// watch 而不是 onMounted：地址栏里的 id 变了要重新加载。
-// 用 onMounted 的话，从「第1章」跳到「第2章」页面不会刷新
+/*
+ * 监听路由参数的变化。
+ *
+ * 为什么不用 onMounted：onMounted 只在组件第一次创建时执行一次。
+ * 从「第1章」点链接跳到「第2章」时，Vue 会复用同一个组件实例
+ * （因为路由配置指向的是同一个组件），onMounted 不会再触发，
+ * 页面就会一直显示第 1 章的内容。
+ *
+ * watch 监听 route.params.id，地址一变就重新加载。
+ * immediate: true 让首次进入页面时也触发一次，
+ * 否则第一次打开时会一直停在「加载中」
+ */
 watch(
-  () => route.params.id as string,
-  (id) => {
+  () => route.params.id as string,   // 要监听什么
+  (id) => {                          // 变了之后做什么
     if (id) load(id)
   },
-  { immediate: true },   // immediate 让首次进入也触发
+  { immediate: true },
 )
 </script>
 
@@ -4204,54 +4480,273 @@ status: draft
 
 ### 后端
 
-**1. 原子写入**（`com/yimo/storage/LibraryStorage.java`）
+#### 保存正文看起来简单，但有三个坑
+
+**把字符串写进文件**这件事本身确实简单。但要满足「作者的稿子不会丢」这个承诺，必须处理三种情况：
+
+| 情况 | 如果不处理会怎样 | 怎么解决 |
+|---|---|---|
+| 写到一半断电/崩溃 | 文件变成半截，稿子毁一半 | 原子写入 |
+| 作者用 Typora 改了同一个文件 | 亿墨这边一保存，Typora 改的内容静默消失 | contentHash 冲突检测 |
+| 网络抖动导致前端重试 | 同一次保存写了两遍（虽然内容一样，但时间戳乱了） | 幂等 |
+
+下面逐个实现。
+
+#### 1. 原子写入
+
+**为什么不能直接 `Files.writeString(file, content)`**：
+
+这个调用在内部会「打开文件 → 清空内容 → 写入」。如果写到一半进程被杀（断电、崩溃、任务管理器结束进程），文件就停在半截——**作者的稿子被毁了**。
+
+**正确做法**：先写到一个临时文件，写完了再用「重命名」把它换成正式文件。
+
+重命名在操作系统层面是**原子操作**——要么完成，要么没发生，不存在中间状态。所以任何时候看这个文件，它要么是旧内容，要么是新内容，绝不会是半截。
+
+`LibraryStorage` 里已经有这个方法了（建这个类时一起写的）：
 
 ```java
+/**
+ * 原子写入。
+ *
+ * <p>先写临时文件再重命名，防「写到一半断电」——
+ * 直接覆盖原文件的话，中途崩溃会留下半截稿子。
+ */
 public void writeAtomic(Path target, String content) {
     try {
         Path dir = target.getParent();
+        // 目录可能不存在（比如新建的卷目录），先建出来
         Files.createDirectories(dir);
 
-        // 临时文件必须和目标同目录，否则 ATOMIC_MOVE 会降级成跨分区拷贝
+        // 临时文件必须和目标在同一个目录。
+        // 跨目录（尤其是跨磁盘分区）时 ATOMIC_MOVE 会失败，
+        // 然后被自动降级成「复制 + 删除」——那就不再是原子的了
         Path tmp = dir.resolve(target.getFileName() + ".tmp");
         Files.writeString(tmp, content, StandardCharsets.UTF_8);
 
+        // ATOMIC_MOVE：原子重命名。
+        // REPLACE_EXISTING：目标已存在时直接覆盖
         Files.move(tmp, target,
-            StandardCopyOption.REPLACE_EXISTING,
-            StandardCopyOption.ATOMIC_MOVE);
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE);
+
     } catch (IOException e) {
         throw new BizException(ErrorCode.FILE_WRITE_FAILED, e.getMessage());
     }
 }
 ```
 
-**2. Frontmatter 写回**
+#### 2. Frontmatter 写回
 
-按 `07-implementation.md` §3 实现 `serialize`。**关键是用 `LinkedHashMap` 且固定已知字段顺序**。
+保存时不能只写正文——原文件头部的 frontmatter 要原样保留。
 
-**3. 保存接口**
+`FrontmatterCodec` 加一个 `serialize` 方法：
 
 ```java
-@PutMapping("/api/chapters/{id}/content")
-public ChapterContentUpdateResponse save(
-    @PathVariable String id,
-    @RequestBody ChapterContentUpdateRequest req
+/**
+ * 组装回完整的 Markdown 文本。
+ *
+ * @param frontmatter 字段。**未知字段必须原样保留**——作者的 md 里可能有
+ *                    亿墨不认识的自定义字段，或者别的工具写入的字段
+ * @param body        正文
+ */
+public String serialize(Map<String, Object> frontmatter, String body) {
+    // 用 LinkedHashMap 而不是 HashMap：
+    // 后者不保证遍历顺序，每次保存字段顺序都可能变，
+    // 作者的 Git 里会出现一堆「只调换了顺序」的无意义 diff
+    Map<String, Object> ordered = new LinkedHashMap<>();
+
+    // 已知字段按固定顺序排前面，保证每次输出一致
+    for (String key : KNOWN_ORDER) {
+        if (frontmatter.containsKey(key)) {
+            ordered.put(key, frontmatter.get(key));
+        }
+    }
+    // 剩下的是未知字段，原样带上
+    frontmatter.forEach(ordered::putIfAbsent);
+
+    DumperOptions options = new DumperOptions();
+    options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+    options.setSplitLines(false);       // 长字符串不折行
+
+    String yaml = new Yaml(options).dump(ordered);
+    return "---\n" + yaml + "---\n\n" + body;
+}
+```
+
+**字段顺序为什么重要**：作者每次保存后如果 Git 里都显示「整个文件都改了」，实际上只是字段顺序变了，那作者就再也不会认真看 diff 了——反正每次都是满屏红色。这会让他错过真正的改动。
+
+#### 3. DTO 和保存接口
+
+新建 `backend/src/main/java/com/yimo/dto/ChapterContentUpdateRequest.java`：
+
+```java
+package com.yimo.dto;
+
+/**
+ * 保存正文的请求。
+ *
+ * @param content     新的正文（不含 frontmatter）
+ * @param contentHash 前端从 GET 接口拿到的哈希，**必须原样回传**。
+ *                    后端用它检测「你编辑期间文件有没有被别的程序改过」
+ * @param createSnapshot 是否同时创建一个版本快照
+ */
+public record ChapterContentUpdateRequest(
+        String content,
+        String contentHash,
+        boolean createSnapshot
 ) {
+}
+```
+
+新建 `backend/src/main/java/com/yimo/dto/ChapterContentUpdateResponse.java`：
+
+```java
+package com.yimo.dto;
+
+import java.time.OffsetDateTime;
+
+/**
+ * 保存成功后的返回。
+ *
+ * @param contentHash 新的哈希。**前端必须用它更新本地保存的值**，
+ *                    否则下一次保存会拿旧哈希来比对，误报冲突
+ * @param wordCount   更新后的字数
+ * @param savedAt     落盘时间
+ */
+public record ChapterContentUpdateResponse(
+        String id,
+        String contentHash,
+        int wordCount,
+        OffsetDateTime savedAt,
+        boolean snapshotCreated
+) {
+}
+```
+
+`ChapterService`（新建，因为这里开始有真正的业务逻辑了）：
+
+```java
+@Service
+public class ChapterService {
+
+    private final ChapterMapper chapterMapper;
+    private final LibraryStorage storage;
+    private final FrontmatterCodec codec;
+    private final ChapterFileWriter fileWriter;
+
+    public ChapterService(ChapterMapper chapterMapper,
+                          LibraryStorage storage,
+                          FrontmatterCodec codec,
+                          ChapterFileWriter fileWriter) {
+        this.chapterMapper = chapterMapper;
+        this.storage = storage;
+        this.codec = codec;
+        this.fileWriter = fileWriter;
+    }
+
+    /**
+     * 保存正文。
+     *
+     * <p>这个方法要同时保证三件事：
+     * <ol>
+     *   <li><b>幂等</b>——内容没变时重复调用不产生副作用</li>
+     *   <li><b>冲突检测</b>——文件被外部改过时拒绝写入并告知前端</li>
+     *   <li><b>原子落盘</b>——绝不留半截文件</li>
+     * </ol>
+     */
+    public ChapterContentUpdateResponse saveContent(String id, ChapterContentUpdateRequest req) {
+        Chapter ch = chapterMapper.selectById(id);
+        if (ch == null) {
+            throw new BizException(ErrorCode.CHAPTER_NOT_FOUND);
+        }
+
+        Path file = PathGuard.resolve(storage.rootOf(ch.getLibraryId()), ch.getRelPath());
+        String currentRaw = storage.read(file);
+        ParsedMarkdown current = codec.parse(currentRaw);
+
+        // ===== 幂等检查 =====
+        // 内容和哈希都没变，说明这次保存是重复的（比如前端重试），
+        // 直接返回成功，不写文件也不更新时间戳
+        String currentHash = HashUtil.sha256Hex(current.body());
+        if (currentHash.equals(req.contentHash()) && current.body().equals(req.content())) {
+            return new ChapterContentUpdateResponse(
+                    ch.getId(), currentHash, ch.getWordCount(),
+                    toOffset(ch.getUpdatedAt()), false);
+        }
+
+        // ===== 冲突检测 =====
+        // 前端传来的哈希和磁盘上实际的不一致，说明在我们编辑期间，
+        // 有别的程序（Typora、VS Code、Git 切分支）改过这个文件。
+        //
+        // 这时不能直接覆盖——那会把别人改的内容悄悄抹掉。
+        // 抛异常让前端弹窗，由作者决定用哪一份
+        if (!currentHash.equals(req.contentHash())) {
+            throw new BizException(ErrorCode.CONTENT_HASH_MISMATCH,
+                    "文件已被外部修改",
+                    Map.of(
+                            "currentHash", currentHash,
+                            "currentContent", current.body()    // 把磁盘上的内容给前端做对比
+                    ));
+        }
+
+        // ===== 写盘 =====
+        // 先把 frontmatter 里的 updated 更新掉，再拼回完整文本
+        Map<String, Object> fm = new LinkedHashMap<>(current.frontmatter());
+        fm.put("updated", OffsetDateTime.now().toString());
+        String newRaw = codec.serialize(fm, req.content());
+
+        storage.writeAtomic(file, newRaw);
+
+        // ===== 更新索引 =====
+        String newHash = HashUtil.sha256Hex(req.content());
+        int wordCount = countWords(req.content());
+
+        ch.setWordCount(wordCount);
+        ch.setContentHash(newHash);
+        ch.setUpdatedAt(LocalDateTime.now());
+        chapterMapper.updateById(ch);
+
+        log.info("章节已保存: {} ({} 字)", ch.getTitle(), wordCount);
+
+        return new ChapterContentUpdateResponse(
+                ch.getId(), newHash, wordCount,
+                toOffset(ch.getUpdatedAt()), false);
+    }
+}
+```
+
+Controller 上加一个方法：
+
+```java
+@PutMapping("/{id}/content")
+public ChapterContentUpdateResponse saveContent(
+        @PathVariable String id,
+        @RequestBody ChapterContentUpdateRequest req) {
     return chapterService.saveContent(id, req);
 }
 ```
 
-Service 里实现幂等 + 冲突检测，见 `07-implementation.md` §6。
+**为什么保存接口是 PUT 而不是 POST**：PUT 的语义是「用我给你的这份内容，替换掉那个资源」——**幂等**。同样的请求发一次和发十次，结果一样。POST 的语义是「创建」，发十次会创建十个。
+
+保存这个操作天然是幂等的，用 PUT 更准确。前端因为网络问题重试时也不用担心。
 
 ### 前端
 
 下面是自动保存的核心逻辑（片段，放在编辑器组件里）。注意 `toApiError` 要从 `@/api/http` 导入。
 
 ```ts
+// ===== 防抖（debounce）=====
+//
+// 目标：作者连续打字时不要每敲一个字就发一次请求。
+//
+// 做法：每次内容变化都重置计时器，只有「停止输入 1.5 秒」之后才真正保存。
+// 打字过程中计时器一直被重置，所以不会触发。
 let timer: number | null = null
 
 function onContentChange(md: string) {
+  // 取消上一次还没到点的计时器
   if (timer) clearTimeout(timer)
+  // 重新计时
   timer = window.setTimeout(() => save(md), 1500)
 }
 
@@ -4259,20 +4754,33 @@ async function save(md: string) {
   try {
     const res = await chapterApi.saveContent(chapterId.value, {
       content: md,
+      // 把打开时拿到的哈希原样发回去，让后端检测文件有没有被外部改过
       contentHash: currentHash.value,
     })
+
+    // 关键：用后端返回的新哈希更新本地。
+    // 忘了这一步的话，下次保存会拿旧哈希去比对，后端会误判成「文件被外部修改」
     currentHash.value = res.contentHash
     saveState.value = 'saved'
   } catch (e) {
     const err = toApiError(e)
+
     if (err.error === 'CONTENT_HASH_MISMATCH') {
-      // 弹窗让作者选：用我的 / 用文件里的
+      // 文件被别的程序改过（Typora、Git 切分支等）。
+      // err.details 里带着磁盘上的最新内容，弹窗让作者二选一：
+      //   「用我的」→ 强制覆盖
+      //   「用文件里的」→ 丢弃本地改动，重新加载
+      conflictDialog.open(err.details)
     } else {
       saveState.value = 'error'
     }
   }
 }
 ```
+
+**为什么要防抖**：一章三千字，每敲一个字发一次请求就是三千次。就算本地服务扛得住，也没必要——**作者打字时的中间状态没有保存价值**，只有停下来那一刻的内容才值得落盘。
+
+**1.5 秒是折中**：太短了起不到防抖作用，太长了作者关掉浏览器可能丢掉最后几秒的输入。
 
 ### 验证清单
 
@@ -4296,40 +4804,116 @@ async function save(md: string) {
 
 ### 后端
 
-按 `07-implementation.md` §4 实现。重点是**文件名生成时的非法字符处理**：
+#### 1. 生成文件名
+
+**为什么这件事有讲究**：章节标题是作者随便写的，可能包含 Windows 不允许出现在文件名里的字符。直接拿标题当文件名，创建文件时会抛异常。
+
+Windows 的限制：
+
+| 限制 | 例子 | 处理 |
+|---|---|---|
+| 9 个字符不能出现在文件名里 | `< > : " / \ | ? *` | 替换成下划线 |
+| 结尾不能是点或空格 | `第一章。 ` 保存时会被系统悄悄去掉点 | 删掉 |
+| 保留名不能用 | `CON` `PRN` `AUX` `NUL` `COM1-9` `LPT1-9` | 前面加下划线 |
+| 整个路径不能超过 260 字符 | 长标题 + 深层目录 | 截断 |
+
+新建 `backend/src/main/java/com/yimo/storage/ChapterFileWriter.java`：
 
 ```java
-public String buildFileName(int order, String title) {
-    String safe = title
-        .replaceAll("[\\\\/:*?\"<>|]", "_")   // Windows 非法字符
-        .replaceAll("[.\\s]+$", "")           // 结尾的点和空格
-        .trim();
+/**
+ * 章节文件的命名与读写。
+ */
+@Component
+public class ChapterFileWriter {
 
-    if (safe.isEmpty()) safe = "未命名";
-    if (isReservedName(safe)) safe = "_" + safe;   // CON PRN AUX NUL COM1-9 LPT1-9
+    /** Windows 文件名里不允许出现的字符。注意反斜杠在正则里要写两次 */
+    private static final Pattern ILLEGAL_CHARS = Pattern.compile("[\\\\/:*?\"<>|]");
 
-    String name = String.format("第%03d章-%s.md", order, safe);
+    /** 结尾的点和空格。Windows 保存时会自动去掉它们，导致文件名和预期不符 */
+    private static final Pattern TRAILING_DOTS_SPACES = Pattern.compile("[.\\s]+$");
 
-    // Windows 路径长度限制
-    if (name.length() > 150) {
-        name = name.substring(0, 140) + ".md";
+    /** Windows 的保留设备名。用这些名字建文件会失败或产生诡异行为 */
+    private static final Set<String> RESERVED = Set.of(
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    );
+
+    /** 文件名最大长度。Windows 的路径上限是 260，留出余量给目录部分 */
+    private static final int MAX_NAME_LENGTH = 150;
+
+    /**
+     * 根据章节序号和标题生成文件名。
+     *
+     * @param order 章节序号，会补零成三位（第001章）
+     * @param title 作者写的标题，可能包含各种非法字符
+     * @return 安全的文件名，如「第001章-雪夜.md」
+     */
+    public String buildFileName(int order, String title) {
+        // 第一步：把非法字符换成下划线
+        String safe = ILLEGAL_CHARS.matcher(title).replaceAll("_");
+        // 第二步：去掉结尾的点和空格
+        safe = TRAILING_DOTS_SPACES.matcher(safe).replaceAll("").trim();
+
+        // 兜底：标题全是非法字符时，safe 会变成空串
+        if (safe.isEmpty()) {
+            safe = "未命名";
+        }
+
+        // 保留名前面加下划线。CON.md 在 Windows 上创建会失败
+        if (RESERVED.contains(safe.toUpperCase())) {
+            safe = "_" + safe;
+        }
+
+        // %03d 表示「补零到三位」：1 → 001，12 → 012，123 → 123。
+        // 补零是为了在文件管理器里按文件名排序时顺序正确
+        String name = String.format("第%03d章-%s.md", order, safe);
+
+        // 太长就截断。注意截断后要补回 .md，否则扩展名就没了
+        if (name.length() > MAX_NAME_LENGTH) {
+            name = name.substring(0, MAX_NAME_LENGTH - 3) + ".md";
+        }
+        return name;
     }
-    return name;
 }
 ```
 
-**删除是移到 `.yimo/trash/`**：
+#### 2. 删除章节
+
+**删除不真删，而是移到书库里的 `.yimo/trash/` 目录**，保留 30 天。
+
+**为什么不直接 `Files.delete`**：作者手滑点错、或者刚删完就后悔——这是会真实发生的事。移到回收站的成本几乎为零（一个文件而已），但能救回一次误操作。
 
 ```java
-public void delete(String chapterId) {
-    Chapter ch = require(chapterId);
-    Path src = PathGuard.resolve(root(ch.getLibraryId()), ch.getRelPath());
-    Path trash = root(ch.getLibraryId())
-        .resolve(".yimo/trash")
-        .resolve(ch.getRelPath().replace('/', '_') + "." + System.currentTimeMillis());
+/**
+ * 删除章节。
+ *
+ * <p>文件不真删，移到 <code>.yimo/trash/</code> 下保留 30 天。
+ * 目录后面加时间戳，是为了同一个章节被删两次时不会互相覆盖。
+ */
+public void deleteChapter(String chapterId) {
+    Chapter ch = chapterMapper.selectById(chapterId);
+    if (ch == null) {
+        throw new BizException(ErrorCode.CHAPTER_NOT_FOUND);
+    }
 
-    Files.createDirectories(trash.getParent());
-    Files.move(src, trash, StandardCopyOption.REPLACE_EXISTING);
+    Path root = storage.rootOf(ch.getLibraryId());
+    Path src = PathGuard.resolve(root, ch.getRelPath());
+
+    // 把路径里的斜杠换成下划线，让回收站里的文件是平铺的。
+    // 否则 07-正文/第001章.md 要在回收站里重建整个目录结构
+    String flatName = ch.getRelPath().replace('/', '_');
+    Path trash = root.resolve(".yimo/trash")
+            .resolve(flatName + "." + System.currentTimeMillis());
+
+    try {
+        Files.createDirectories(trash.getParent());
+        Files.move(src, trash, StandardCopyOption.REPLACE_EXISTING);
+    } catch (IOException e) {
+        throw new BizException(ErrorCode.FILE_WRITE_FAILED, "移入回收站失败: " + e.getMessage());
+    }
+
+    // 数据库记录直接删掉。文件还在回收站里，需要恢复时人工处理
     chapterMapper.deleteById(chapterId);
 }
 ```
@@ -4360,14 +4944,33 @@ public void delete(String chapterId) {
 <script setup lang="ts">
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
-import { watch } from 'vue'
 
+/*
+ * defineProps / defineEmits 是 <script setup> 里的编译器宏，
+ * 不需要 import，直接就能用。
+ *
+ * 这个组件设计成「受控组件」：父组件传 modelValue 进来，
+ * 内容变化时 emit 一个 update:modelValue 出去。父组件监听这个事件
+ * 就能拿到最新内容——这是 Vue 里 v-model 的标准写法。
+ */
 const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
 const editor = useEditor({
+  // 初始内容。从父组件传进来
   content: props.modelValue,
+
+  // 扩展列表。StarterKit 是官方打包好的一套基础扩展，
+  // 包含段落、加粗、斜体、标题、列表、引用等
   extensions: [StarterKit],
+
+  // 内容变化时的回调。
+  //
+  // editor.getJSON() 拿到的是 ProseMirror 的文档结构（一棵 JSON 树），
+  // 需要转成 Markdown 才能存盘。
+  //
+  // serializeMarkdown 是自己写的转换函数——这就是「所见即所得」和
+  // 「Markdown 存储」之间的那座桥，也是这个项目最容易出 bug 的地方
   onUpdate: ({ editor }) => {
     emit('update:modelValue', serializeMarkdown(editor.getJSON()))
   },
@@ -4520,51 +5123,118 @@ public interface Rule {
 
 **2. 先实现三条最简单、最不会误报的**
 
+**为什么先做「最不会误报的」**：规则引擎最大的风险不是漏报，而是**误报**。满屏波浪线里混着一半是错的，作者两次之后就再也不会看这个功能了。
+
+省略号这条完全不可能误报——`...` 或 `。。。` 在任何语境下都该写成 `……`。
+
+新建 `backend/src/main/java/com/yimo/rules/impl/EllipsisRule.java`：
+
 ```java
 @Component
 public class EllipsisRule implements Rule {
 
+    /**
+     * 匹配错误的省略号写法。
+     *
+     * <p>\.{3,}  三个及以上的英文句点
+     * <p>。{3,}  三个及以上的中文句号
+     */
     private static final Pattern WRONG = Pattern.compile("\\.{3,}|。{3,}");
 
-    @Override public String id() { return "ellipsis"; }
-    @Override public String description() { return "省略号应使用……"; }
-    @Override public Severity defaultSeverity() { return Severity.WARNING; }
-    @Override public boolean defaultEnabled() { return true; }
+    @Override
+    public String id() {
+        return "ellipsis";
+    }
+
+    @Override
+    public String description() {
+        return "省略号应使用「……」而不是三个点或三个句号";
+    }
+
+    @Override
+    public Severity defaultSeverity() {
+        return Severity.WARNING;
+    }
+
+    @Override
+    public boolean defaultEnabled() {
+        return true;    // 这条零误报，默认开着
+    }
 
     @Override
     public List<RuleIssue> check(String text, RuleContext ctx) {
         List<RuleIssue> issues = new ArrayList<>();
         Matcher m = WRONG.matcher(text);
+
+        // find() 会依次找到所有匹配位置，不像 matches() 只判断整体是否匹配
         while (m.find()) {
-            issues.add(new RuleIssue(m.start(), m.end(),
-                "省略号应使用「……」", List.of("……"), 0.95));
+            issues.add(new RuleIssue(
+                    m.start(),          // 问题文本在章节里的起始位置
+                    m.end(),            // 结束位置（不含）
+                    "省略号应使用「……」",
+                    List.of("……"),      // 候选替换文本
+                    0.95                // 置信度，接近 1 表示很确定
+            ));
         }
         return issues;
     }
 }
 ```
 
+**`@Component` 让 Spring 把它注册成 Bean**。下面的引擎会自动收集所有 `Rule` 实现，不需要手写注册代码——加一条新规则只要新建一个类就行。
+
 **3. 引擎**
+
+引擎负责：找出所有规则 → 逐个执行 → 汇总结果 → 按位置排序。
 
 ```java
 @Service
 public class RuleEngine {
+
+    /**
+     * 所有规则实现。
+     *
+     * <p>Spring 会自动把容器里所有 Rule 类型的 Bean 注入到这个 List 里——
+     * 加新规则时不用改这里的代码，新建一个带 @Component 的实现类就行。
+     */
     private final List<Rule> rules;
 
+    private final RuleSettingService settingService;
+
+    public RuleEngine(List<Rule> rules, RuleSettingService settingService) {
+        this.rules = rules;
+        this.settingService = settingService;
+    }
+
+    /**
+     * 对章节正文跑一遍所有规则。
+     *
+     * @return 批注列表，按位置从前到后排序
+     */
     public List<Review> check(String chapterId, String text) {
-        List<Review> reviews = new ArrayList<>();
+        List<Review> results = new ArrayList<>();
+
         for (Rule rule : rules) {
-            if (!isEnabled(rule)) continue;
-            for (RuleIssue issue : rule.check(text, ctx)) {
-                reviews.add(toReview(chapterId, text, rule, issue));
+            // 作者可能关掉了这条规则（觉得误报太多），或者它默认就是关的
+            if (!settingService.isEnabled(rule)) {
+                continue;
+            }
+
+            for (RuleIssue issue : rule.check(text, new RuleContext(chapterId))) {
+                results.add(toReview(chapterId, text, rule, issue));
             }
         }
-        return reviews.stream()
-            .sorted(Comparator.comparingInt(r -> r.getAnchor().from()))
-            .toList();
+
+        // 按位置排序。不排的话，界面上波浪线的顺序是乱的——
+        // 作者从上往下看，批注却东一个西一个
+        return results.stream()
+                .sorted(Comparator.comparingInt(r -> r.getAnchor().from()))
+                .toList();
     }
 }
 ```
+
+**为什么要排序**：多条规则各管各的，同一条规则内部又是按位置产生的。汇总到一起时顺序就乱了。作者在编辑器里是从上往下读的，批注顺序必须和阅读顺序一致。
 
 ### 前端
 
@@ -4595,21 +5265,32 @@ public class RuleEngine {
 **1. 加 Spring AI 依赖**
 
 ```xml
+<!--
+  dependencyManagement 里放的是「版本声明」，不是真正的依赖。
+  它告诉 Maven：凡是 org.springframework.ai 组下的包，都用 2.0.1 这个版本。
+
+  这样下面写具体依赖时就不用一个个写版本号了。
+  BOM（Bill of Materials，物料清单）就是这个用途——
+  一整套相关联的包统一版本，避免 A 用 2.0、B 用 1.0 导致的诡异冲突。
+-->
 <dependencyManagement>
     <dependencies>
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-bom</artifactId>
-            <version>1.0.0</version>
+            <!-- 2.x 对应 Spring Boot 4。1.x 是给 Spring Boot 3 的，配错了起不来 -->
+            <version>2.0.1</version>
             <type>pom</type>
-            <scope>import</scope>
+            <scope>import</scope>   <!-- import 表示「把这个 pom 里的版本声明引入进来」 -->
         </dependency>
     </dependencies>
 </dependencyManagement>
 
+<!-- 真正的依赖。用 OpenAI 兼容协议，一套代码能接 DeepSeek、通义、Kimi 等 -->
 <dependency>
     <groupId>org.springframework.ai</groupId>
     <artifactId>spring-ai-starter-model-openai</artifactId>
+    <!-- 版本由上面的 BOM 管，这里不用写 -->
 </dependency>
 ```
 
