@@ -1111,23 +1111,37 @@ curl http://127.0.0.1:18080/api/libraries
 
 ```bash
 cd D:/Project/yi-mo
-npm create vue@latest frontend
+npm_config_yes=true npm create vue@latest frontend -- --ts --router --pinia --vitest --eslint --prettier --force
 ```
 
-按提示选择：
+**为什么用这一长串参数**：不加参数的话，`create-vue` 会逐个问你八个问题，每次都要回车，还容易选错。直接把选项写在命令里，一次到位。
+
+拆开看每个参数：
+
+| 参数 | 作用 |
+|---|---|
+| `--ts` | 用 TypeScript |
+| `--router` | 装 Vue Router（页面路由） |
+| `--pinia` | 装 Pinia（状态管理） |
+| `--vitest` | 装 Vitest（单元测试） |
+| `--eslint` | 代码检查 |
+| `--prettier` | 代码格式化 |
+| `--force` | 目录已存在时直接覆盖，不追问 |
+| `npm_config_yes=true` | 自动确认 npm 下载 create-vue 这个包 |
+
+**没选的两个**：JSX（Vue 里用不上）、端到端测试（后面需要时再单独装 Playwright）。
+
+**预期输出**（结尾）：
 
 ```
-✔ Add TypeScript?                          Yes
-✔ Add JSX Support?                         No
-✔ Add Vue Router?                          Yes
-✔ Add Pinia?                               Yes
-✔ Add Vitest?                              Yes
-✔ Add End-to-End Testing?                  No
-✔ Add ESLint?                              Yes
-✔ Add Prettier?                            Yes
+┌  Vue.js - The Progressive JavaScript Framework
+│
+│  正在初始化项目 D:\Project\yi-mo\frontend...
+│
+└  项目初始化完成
 ```
 
-然后：
+然后装依赖并启动：
 
 ```bash
 cd frontend
@@ -1138,7 +1152,7 @@ npm run dev
 **预期输出**：
 
 ```
-  VITE v7.x.x  ready in 1234 ms
+  VITE v8.x.x  ready in 859 ms
 
   ➜  Local:   http://localhost:5173/
 ```
@@ -1160,6 +1174,20 @@ npm install -D tailwindcss @tailwindcss/vite
 | `@tiptap/starter-kit` | 编辑器基础扩展 |
 | `tailwindcss` | 样式 |
 
+**Tailwind 4 的接入方式和 3 完全不一样，网上搜到的教程大多是 3 的，照抄会踩坑。**
+
+Tailwind 4 只需要两步：
+
+**第 1 步**：`frontend/src/assets/main.css` 第一行加
+
+```css
+@import 'tailwindcss';
+```
+
+**第 2 步**：`vite.config.ts` 加插件（见下一节）。
+
+Tailwind 3 要写 `tailwind.config.js`、要加三个 `@tailwind` 指令、要配 PostCSS——**4 全都不要了**。如果你搜到的教程让你建 `tailwind.config.js`，那是 3 的教程，跳过。
+
 ## 3.3 配置代理
 
 开发时前端跑在 5173，后端跑在 18080。浏览器直接请求 18080 会撞上跨域限制。**在 Vite 里配代理绕过去**。
@@ -1171,15 +1199,21 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  plugins: [vue(), vueDevTools()],
+  plugins: [vue(), vueDevTools(), tailwindcss()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   server: {
     port: 5173,
     proxy: {
+      // 开发时把 /api 转发到后端，浏览器看到的是同源请求，没有跨域问题。
+      // 生产环境前端产物打进 jar，前后端本来就同源，这段配置不影响生产。
+      //
+      // 前端代码里所有请求都写相对路径 '/api/xxx'，
+      // 绝对不要写死 http://127.0.0.1:18080 —— 那会导致生产环境全部 404
       '/api': {
         target: 'http://127.0.0.1:18080',
         changeOrigin: true,
@@ -1250,47 +1284,98 @@ export const libraryApi = {
 
 ## 3.5 第一个页面
 
-编辑 `frontend/src/App.vue`：
+### 第 1 步：清掉脚手架的示例代码
+
+```bash
+cd D:/Project/yi-mo/frontend
+rm -rf src/components src/views/AboutView.vue src/assets/base.css src/assets/logo.svg src/stores/counter.ts
+```
+
+留下的结构：
+
+```
+src/
+├── api/
+│   ├── http.ts          HTTP 客户端封装
+│   └── library.ts       书库相关接口
+├── assets/main.css
+├── router/index.ts
+├── views/HomeView.vue   首页
+├── App.vue
+└── main.ts
+```
+
+### 第 2 步：`App.vue` 只留一个路由出口
+
+```vue
+<script setup lang="ts">
+import { RouterView } from 'vue-router'
+</script>
+
+<template>
+  <RouterView />
+</template>
+```
+
+**为什么要这样拆**：`App.vue` 是整个应用的根容器，管的是整体布局（将来的左侧项目树、顶部工具栏都放这）。具体页面放在 `views/` 下，由路由决定显示哪个。混在一起的话，加第二个页面时就要大改。
+
+### 第 3 步：路由指向首页
+
+编辑 `frontend/src/router/index.ts`：
+
+```ts
+import { createRouter, createWebHistory } from 'vue-router'
+import HomeView from '@/views/HomeView.vue'
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    {
+      path: '/',
+      name: 'home',
+      component: HomeView,
+    },
+  ],
+})
+
+export default router
+```
+
+### 第 4 步：写首页
+
+`frontend/src/views/HomeView.vue`：
 
 ```vue
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { libraryApi, type Library } from '@/api/library'
+import { pingApi, type PingResult } from '@/api/ping'
+import type { ApiError } from '@/api/http'
 
-const libraries = ref<Library[]>([])
-const loading = ref(false)
-const error = ref('')
+const ping = ref<PingResult | null>(null)
+const error = ref<ApiError | null>(null)
+const loading = ref(true)
 
-onMounted(async () => {
+async function check() {
   loading.value = true
+  error.value = null
   try {
-    libraries.value = await libraryApi.list()
-  } catch (e: any) {
-    error.value = e?.message ?? '加载失败'
+    ping.value = await pingApi.ping()
+  } catch (e) {
+    error.value = e as ApiError
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(check)
 </script>
-
-<template>
-  <div style="padding: 24px">
-    <h1>亿墨 YI-MO</h1>
-
-    <p v-if="loading">加载中…</p>
-    <p v-else-if="error" style="color: red">{{ error }}</p>
-    <p v-else-if="libraries.length === 0">还没有书库</p>
-
-    <ul v-else>
-      <li v-for="lib in libraries" :key="lib.id">
-        {{ lib.name }} — <code>{{ lib.path }}</code>
-      </li>
-    </ul>
-  </div>
-</template>
 ```
 
-**验证**：刷新浏览器，看到第 2 章插入的「测试书库」。
+模板部分就是个三态展示：加载中 / 出错 / 成功。用 `fetch` 或 axios 拿到 `/api/ping` 的结果显示出来。
+
+**这一步的目的是验证链路，不是做界面。** 等迭代 1 做书库管理时，这个页面会被真正的界面替换掉。
+
+**验证**：刷新浏览器，看到绿色的「前后端已连通」和三个字段。
 
 **到这里第 3 章完成。** 前后端链路全通了。
 

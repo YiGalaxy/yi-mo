@@ -813,7 +813,15 @@ export interface ChapterDetail {
 }
 ```
 
-**用 `record` 而不是 Lombok 的 `@Data`**：record 是不可变的，天然线程安全，且不引入 Lombok 这个额外依赖。Java 21 原生支持。
+**DTO 用 `record`，实体类用 `@Data`。** 两类东西，两种写法：
+
+| | DTO（请求 / 响应） | 实体（跟数据库表对应） |
+|---|---|---|
+| 写法 | `public record ChapterDetail(...) {}` | `@Data public class Library {}` |
+| 为什么 | 不可变、天然线程安全、Java 21 原生支持，不需要 Lombok | MyBatis-Plus 需要无参构造函数和 setter，record 做不到 |
+| 样板代码 | 无 | Lombok 的 `@Data` 自动生成 getter/setter |
+
+DTO 要传值，构造后不该再改；实体要从数据库读出来填值，必须能被改。这个区别决定了两者写法不同。
 
 ## 16. 开发顺序建议
 

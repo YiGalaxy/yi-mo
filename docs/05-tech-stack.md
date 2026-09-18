@@ -7,14 +7,16 @@
 | 技术 | 版本 | 用途 |
 |---|---|---|
 | Vue | 3.5+ | 界面框架 |
-| TypeScript | 5.x，`strict: true` | 语言 |
+| TypeScript | 6.x，`strict: true` | 语言 |
 | Vite | 8.x | 构建工具 |
 | Tiptap | 3.x | 富文本编辑器（Vue 3 绑定 `@tiptap/vue-3`） |
-| Pinia | 3.x | 状态管理 |
-| Vue Router | 4.x | 路由 |
+| Pinia | 4.x | 状态管理 |
+| Vue Router | 5.x | 路由 |
 | Naive UI | 2.x | 组件库 |
 | Tailwind CSS | 4.x | 样式 |
 | Axios | 1.x | HTTP 客户端 |
+| Vitest | 4.x | 单元测试 |
+| ESLint | 10.x | 代码检查 |
 
 ### 后端
 
