@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   NButton,
   NCard,
@@ -16,6 +17,12 @@ import { systemApi } from '@/api/system'
 import { toApiError } from '@/api/http'
 
 const message = useMessage()
+const router = useRouter()
+
+/** 进入某个书库的章节树 */
+function openLibrary(id: string) {
+  router.push(`/libraries/${id}/tree`)
+}
 const libraries = ref<Library[]>([])
 const showDialog = ref(false)
 const newPath = ref('')
@@ -98,14 +105,26 @@ onMounted(load)
 
     <n-list v-else bordered>
       <n-list-item v-for="lib in libraries" :key="lib.id">
-        <div class="flex items-center justify-between">
-          <div class="min-w-0">
+        <div class="flex items-center justify-between gap-3">
+          <!--
+            整块可点击，进入这本书的章节树。
+            cursor-pointer + hover 背景让「可点」这件事可见——
+            没有视觉反馈的话用户不知道能点
+          -->
+          <div
+            class="min-w-0 flex-1 cursor-pointer rounded px-2 py-1 -mx-2 hover:bg-neutral-100"
+            @click="openLibrary(lib.id)"
+          >
             <div class="text-sm font-medium text-neutral-800">{{ lib.name }}</div>
             <div class="text-xs text-neutral-500 font-mono truncate mt-0.5">
               {{ lib.path }}
             </div>
           </div>
-          <n-button size="tiny" quaternary @click="remove(lib.id)">移除</n-button>
+
+          <div class="flex gap-1 shrink-0">
+            <n-button size="tiny" @click="openLibrary(lib.id)">打开</n-button>
+            <n-button size="tiny" quaternary @click="remove(lib.id)">移除</n-button>
+          </div>
         </div>
       </n-list-item>
     </n-list>

@@ -16,6 +16,12 @@ const router = createRouter({
       // 首页不 import 它，首屏就少加载一个组件
       component: () => import('@/views/LibraryView.vue'),
     },
+    {
+      // :libraryId 是路径参数，页面里用 route.params.libraryId 取
+      path: '/libraries/:libraryId/tree',
+      name: 'tree',
+      component: () => import('@/views/TreeView.vue'),
+    },
   ],
 })
 
