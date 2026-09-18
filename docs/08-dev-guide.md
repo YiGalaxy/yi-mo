@@ -1934,9 +1934,106 @@ async function submit() {
 
 onMounted(load)
 </script>
+
+<template>
+  <div class="p-6 max-w-2xl mx-auto">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-lg font-medium text-neutral-800">书库</h2>
+      <n-button type="primary" size="small" @click="showDialog = true">
+        添加书库
+      </n-button>
+    </div>
+
+    <n-empty
+      v-if="libraries.length === 0"
+      description="还没有书库，添加一个文件夹开始吧"
+      class="py-16"
+    />
+
+    <n-list v-else bordered>
+      <n-list-item v-for="lib in libraries" :key="lib.id">
+        <div class="flex items-center justify-between">
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-neutral-800">{{ lib.name }}</div>
+            <div class="text-xs text-neutral-500 font-mono truncate mt-0.5">
+              {{ lib.path }}
+            </div>
+          </div>
+          <n-button size="tiny" quaternary @click="remove(lib.id)">移除</n-button>
+        </div>
+      </n-list-item>
+    </n-list>
+
+    <n-modal v-model:show="showDialog">
+      <n-card
+        style="width: 520px"
+        title="添加书库"
+        :bordered="false"
+        role="dialog"
+      >
+        <p class="text-xs text-neutral-500 mb-3">
+          填写一个文件夹的完整路径。亿墨会把它当作书库，里面的每个子文件夹是一本书。
+        </p>
+        <n-input
+          v-model:value="newPath"
+          placeholder="D:\我的小说"
+          @keyup.enter="submit"
+        />
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <n-button size="small" @click="showDialog = false">取消</n-button>
+            <n-button
+              size="small"
+              type="primary"
+              :loading="submitting"
+              :disabled="!newPath.trim()"
+              @click="submit"
+            >
+              确定
+            </n-button>
+          </div>
+        </template>
+      </n-card>
+    </n-modal>
+  </div>
+</template>
 ```
 
-**注意**：浏览器出于安全限制，**不能通过网页获取用户选择的绝对路径**（`<input type="file" webkitdirectory>` 只给相对路径）。所以路径要手填或粘贴。
+**注意几个地方**：
+
+- `NCard` 用 `<template #footer>` 放底部按钮——Naive UI 的插槽写法
+- `NModal` 用 `v-model:show` 控制显隐
+- `NInput` 加了 `@keyup.enter="submit"`，输入路径后直接回车就能提交
+- 列表里的移除按钮调 `remove(lib.id)`，你需要在 `<script>` 里补上这个函数：
+
+```ts
+async function remove(id: string) {
+  try {
+    await libraryApi.remove(id)
+    message.success('已移除（磁盘文件未删除）')
+    await load()
+  } catch (e: any) {
+    message.error(e?.message ?? '移除失败')
+  }
+}
+```
+
+**Naive UI 的样式要额外接一下**。`main.ts` 里如果用 `useMessage()`，需要外层有 `<n-message-provider>` 包着，否则会报 `No outer <n-message-provider />`。最简单的做法是在 `App.vue` 里包一层：
+
+```vue
+<script setup lang="ts">
+import { RouterView } from 'vue-router'
+import { NMessageProvider } from 'naive-ui'
+</script>
+
+<template>
+  <n-message-provider>
+    <RouterView />
+  </n-message-provider>
+</template>
+```
+
+**浏览器出于安全限制，不能通过网页获取用户选择的绝对路径**（`<input type="file" webkitdirectory>` 只给相对路径）。所以路径要手填或粘贴。
 
 这是引入后端之后仍然存在的一个限制。**后续可以做成：后端弹一个原生的目录选择对话框**（Java 的 `JFileChooser`），前端调接口触发。这属于 M6 的打磨项，现在手填够用。
 
