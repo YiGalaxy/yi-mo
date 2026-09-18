@@ -3777,7 +3777,7 @@ mvn test -Dtest=FrontmatterCodecTest
 ```java
 package com.yimo.service;
 
-import cn.hutool.core.util.HashUtil;
+import cn.hutool.crypto.digest.DigestUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.yimo.common.BizException;
 import com.yimo.common.ErrorCode;
@@ -3900,7 +3900,7 @@ public class ScanService {
         ch.setStatus(stringOr(fm.get("status"), "draft"));
         ch.setWordCount(countWords(pm.body()));
         // 内容哈希：下次扫描时比对，内容没变就跳过重新解析
-        ch.setContentHash(HashUtil.sha256Hex(pm.body()));
+        ch.setContentHash(DigestUtil.sha256Hex(pm.body()));
         ch.setUpdatedAt(LocalDateTime.now());
 
         chapterMapper.insertOrUpdate(ch);
@@ -4667,7 +4667,7 @@ public class ChapterService {
         // ===== 幂等检查 =====
         // 内容和哈希都没变，说明这次保存是重复的（比如前端重试），
         // 直接返回成功，不写文件也不更新时间戳
-        String currentHash = HashUtil.sha256Hex(current.body());
+        String currentHash = DigestUtil.sha256Hex(current.body());
         if (currentHash.equals(req.contentHash()) && current.body().equals(req.content())) {
             return new ChapterContentUpdateResponse(
                     ch.getId(), currentHash, ch.getWordCount(),
@@ -4698,7 +4698,7 @@ public class ChapterService {
         storage.writeAtomic(file, newRaw);
 
         // ===== 更新索引 =====
-        String newHash = HashUtil.sha256Hex(req.content());
+        String newHash = DigestUtil.sha256Hex(req.content());
         int wordCount = countWords(req.content());
 
         ch.setWordCount(wordCount);

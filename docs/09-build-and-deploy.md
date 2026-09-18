@@ -568,7 +568,7 @@ private boolean needsReindex(Path file, Chapter existing) throws IOException {
 
     // mtime 变了，再比内容哈希确认是不是真的改了
     String raw = Files.readString(file, StandardCharsets.UTF_8);
-    return !existing.getContentHash().equals(HashUtil.sha256Hex(raw));
+    return !existing.getContentHash().equals(DigestUtil.sha256Hex(raw));
 }
 ```
 
