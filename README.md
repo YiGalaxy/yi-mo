@@ -63,6 +63,7 @@
 - [开发手册](docs/08-dev-guide.md) — 从装环境到逐个功能跑通，每步带验证清单
 - [构建与部署](docs/09-build-and-deploy.md) — 前端进 jar、启动器、缓存策略
 - [OpenAPI 规范](openapi/yimo-api.json) — 44 路径 / 57 操作 / 48 Schema，可直接导入 Apifox
+- [Git 速查](docs/10-git-cheatsheet.md) — 常用命令、按「错到哪一步」分类的撤销指南
 
 ## 技术栈
 
