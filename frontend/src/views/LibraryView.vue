@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NButton, NCard, NEmpty, NInput, NList, NListItem, NModal, useMessage } from 'naive-ui'
+import {
+  NButton,
+  NCard,
+  NEmpty,
+  NInput,
+  NInputGroup,
+  NList,
+  NListItem,
+  NModal,
+  useMessage,
+} from 'naive-ui'
 import { libraryApi, type Library } from '@/api/library'
+import { systemApi } from '@/api/system'
 import { toApiError } from '@/api/http'
 
 const message = useMessage()
@@ -38,6 +49,24 @@ async function submit() {
     message.error(toApiError(e).message)
   } finally {
     submitting.value = false
+  }
+}
+
+/**
+ * 弹出后端的原生文件夹选择窗口，选中后把路径填进输入框。
+ *
+ * 浏览器不能获取用户选择的绝对路径，所以这一步必须走后端。
+ */
+async function browse() {
+  try {
+    const res = await systemApi.pickDirectory(newPath.value.trim() || undefined)
+    if (res.picked && res.path) {
+      newPath.value = res.path
+    }
+    // 用户点了取消：picked 是 false，什么都不做
+  } catch (e) {
+    // 没有图形界面的环境（Docker、无头服务器）会返回 PICKER_UNSUPPORTED
+    message.warning(toApiError(e).message)
   }
 }
 
@@ -86,7 +115,14 @@ onMounted(load)
         <p class="text-xs text-neutral-500 mb-3">
           填写一个文件夹的完整路径。亿墨会把它当作书库，里面的每个子文件夹是一本书。
         </p>
-        <n-input v-model:value="newPath" placeholder="D:\我的小说" @keyup.enter="submit" />
+        <n-input-group>
+          <n-input
+            v-model:value="newPath"
+            placeholder="D:\我的小说"
+            @keyup.enter="submit"
+          />
+          <n-button @click="browse">浏览…</n-button>
+        </n-input-group>
         <template #footer>
           <div class="flex justify-end gap-2">
             <n-button size="small" @click="showDialog = false">取消</n-button>

@@ -2056,9 +2056,236 @@ import { NMessageProvider } from 'naive-ui'
 </template>
 ```
 
-**浏览器出于安全限制，不能通过网页获取用户选择的绝对路径**（`<input type="file" webkitdirectory>` 只给相对路径）。所以路径要手填或粘贴。
+### 3. 加一个文件夹选择按钮
 
-这是引入后端之后仍然存在的一个限制。**后续可以做成：后端弹一个原生的目录选择对话框**（Java 的 `JFileChooser`），前端调接口触发。这属于 M6 的打磨项，现在手填够用。
+**浏览器出于安全限制，不允许网页获取用户选择的绝对路径**（`<input type="file" webkitdirectory>` 只给相对路径）。所以这个功能只能由后端做——后端没有这个限制，可以直接调系统的文件夹选择窗口。
+
+#### 3.1 后端
+
+**第 1 步：错误码**
+
+`ErrorCode` 里加三个：
+
+```java
+// ===== 原生对话框 =====
+PICKER_UNSUPPORTED(HttpStatus.BAD_REQUEST, "当前环境没有图形界面，请手动填写路径"),
+PICKER_BUSY(HttpStatus.CONFLICT, "已经有一个选择窗口打开了"),
+PICKER_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "打开选择窗口失败"),
+```
+
+**第 2 步：DTO**
+
+```java
+// PickDirectoryRequest.java
+public record PickDirectoryRequest(String initialPath) {}
+
+// PickDirectoryResponse.java
+public record PickDirectoryResponse(boolean picked, String path) {}
+```
+
+`picked` 是给「用户点了取消」准备的——取消不是错误，返回 `picked: false` 就行。
+
+**第 3 步：Service**
+
+新建 `com/yimo/service/DirectoryPickerService.java`：
+
+```java
+@Service
+public class DirectoryPickerService {
+
+    private static final Logger log = LoggerFactory.getLogger(DirectoryPickerService.class);
+
+    /** 同一时间只允许一个选择窗口，防止用户连点弹出多个 */
+    private final Semaphore semaphore = new Semaphore(1);
+
+    public Optional<String> pickDirectory(String initialPath) {
+        if (GraphicsEnvironment.isHeadless()) {
+            throw new BizException(ErrorCode.PICKER_UNSUPPORTED);
+        }
+        if (!semaphore.tryAcquire()) {
+            throw new BizException(ErrorCode.PICKER_BUSY);
+        }
+
+        try {
+            AtomicReference<File> chosen = new AtomicReference<>();
+
+            // JFileChooser 必须在事件调度线程（EDT）上创建和显示，
+            // 直接在 Tomcat 的请求线程里 new 会出各种诡异问题
+            SwingUtilities.invokeAndWait(() -> {
+                useSystemLookAndFeel();
+
+                JFileChooser chooser = new JFileChooser();
+                chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+                chooser.setDialogTitle("选择书库文件夹");
+                chooser.setAcceptAllFileFilterUsed(false);
+
+                File initial = toExistingDirectory(initialPath);
+                if (initial != null) {
+                    chooser.setCurrentDirectory(initial);
+                }
+
+                if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                    chosen.set(chooser.getSelectedFile());
+                }
+            });
+
+            File file = chosen.get();
+            return file == null ? Optional.empty() : Optional.of(file.getAbsolutePath());
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(ErrorCode.PICKER_FAILED, "等待用户选择时被中断");
+        } catch (InvocationTargetException e) {
+            log.error("弹出目录选择窗口失败", e.getCause());
+            throw new BizException(ErrorCode.PICKER_FAILED,
+                    e.getCause() != null ? e.getCause().getMessage() : "未知原因");
+        } finally {
+            semaphore.release();
+        }
+    }
+
+    /** 用系统外观，窗口长得跟其他 Windows 程序一致，而不是 Swing 默认的金属灰 */
+    private void useSystemLookAndFeel() {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            log.debug("设置系统外观失败，使用默认外观", e);
+        }
+    }
+
+    private File toExistingDirectory(String path) {
+        if (path == null || path.isBlank()) return null;
+        File file = new File(path);
+        return file.isDirectory() ? file : null;
+    }
+}
+```
+
+**第 4 步：`YimoApplication` 关掉 headless**
+
+**这一步不做，弹窗会直接抛 `HeadlessException`。**
+
+Spring Boot 默认以 headless 模式启动，那个模式下 AWT/Swing 全被禁用。
+
+```java
+public static void main(String[] args) {
+    SpringApplication app = new SpringApplication(YimoApplication.class);
+
+    // Spring Boot 默认 headless 模式，AWT/Swing 被禁用，
+    // 弹文件夹选择窗口会抛 HeadlessException。关掉它才能用 DirectoryPickerService。
+    //
+    // 没有图形界面的环境不受影响：Service 里会先检测
+    // GraphicsEnvironment.isHeadless()，检测到就降级报错，不会让服务起不来
+    app.setHeadless(false);
+
+    app.run(args);
+}
+```
+
+**第 5 步：Controller**
+
+新建 `com/yimo/controller/SystemController.java`：
+
+```java
+@RestController
+@RequestMapping("/api/system")
+public class SystemController {
+
+    private final DirectoryPickerService pickerService;
+
+    public SystemController(DirectoryPickerService pickerService) {
+        this.pickerService = pickerService;
+    }
+
+    /** 弹出原生文件夹选择窗口。这个请求会阻塞到用户选完或取消 */
+    @PostMapping("/pick-directory")
+    public PickDirectoryResponse pickDirectory(
+            @RequestBody(required = false) PickDirectoryRequest req) {
+
+        String initialPath = req != null ? req.initialPath() : null;
+        Optional<String> picked = pickerService.pickDirectory(initialPath);
+
+        return new PickDirectoryResponse(picked.isPresent(), picked.orElse(null));
+    }
+}
+```
+
+#### 3.2 前端
+
+**第 1 步：API**
+
+新建 `frontend/src/api/system.ts`：
+
+```ts
+import { http } from './http'
+
+export interface PickDirectoryResult {
+  picked: boolean
+  path: string | null
+}
+
+export const systemApi = {
+  pickDirectory: (initialPath?: string) =>
+    http.post<unknown, PickDirectoryResult>(
+      '/system/pick-directory',
+      { initialPath: initialPath ?? null },
+      // 超时设为 0（不超时）：用户可能在窗口里翻半天文件夹，
+      // 默认的 30 秒会让请求提前失败
+      { timeout: 0 },
+    ),
+}
+```
+
+**第 2 步：页面上加按钮**
+
+`LibraryView.vue` 的 `<script setup>` 里加：
+
+```ts
+import { systemApi } from '@/api/system'
+
+async function browse() {
+  try {
+    const res = await systemApi.pickDirectory(newPath.value.trim() || undefined)
+    if (res.picked && res.path) {
+      newPath.value = res.path
+    }
+    // 用户点了取消：picked 是 false，什么都不做
+  } catch (e) {
+    // 没有图形界面的环境会返回 PICKER_UNSUPPORTED
+    message.warning(toApiError(e).message)
+  }
+}
+```
+
+模板里把输入框包成一组，右边挂按钮：
+
+```vue
+<n-input-group>
+  <n-input
+    v-model:value="newPath"
+    placeholder="D:\我的小说"
+    @keyup.enter="submit"
+  />
+  <n-button @click="browse">浏览…</n-button>
+</n-input-group>
+```
+
+别忘了在 `naive-ui` 的 import 里加上 `NInputGroup`。
+
+#### 3.3 验证
+
+重启后端（改了 Java 代码必须重启），然后：
+
+| 检查 | 怎么做 | 预期 |
+|---|---|---|
+| 弹窗出现 | 点「浏览…」 | 弹出系统的文件夹选择窗口 |
+| 选中后填进输入框 | 选一个目录，点确定 | 路径自动填入，可以直接点确定 |
+| 取消不报错 | 打开窗口直接点取消 | 什么都不发生，输入框内容不变 |
+| 连点不会弹多个 | 快速点两下「浏览…」 | 只弹一个，第二次请求返回「已经有一个选择窗口打开了」 |
+| 窗口外观 | 看窗口样式 | 跟其他 Windows 程序一致，不是 Swing 默认的金属灰 |
+| 无图形界面时降级 | 加 `-Djava.awt.headless=true` 启动 | 点浏览提示「当前环境没有图形界面，请手动填写路径」 |
+
+**这个功能只在有图形界面的机器上有效。** 跑在 Docker 或无头服务器上时，前端会收到提示并让用户手动填写——不会因为弹不出窗口就整个功能瘫痪。
 
 ### 验证清单
 

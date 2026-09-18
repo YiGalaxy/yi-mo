@@ -63,6 +63,10 @@
     {
       "name": "Export",
       "description": "导出"
+    },
+    {
+      "name": "System",
+      "description": "调用操作系统能力。只在本机运行时有意义"
     }
   ],
   "paths": {
@@ -2114,6 +2118,45 @@
           }
         }
       }
+    },
+    "/api/system/pick-directory": {
+      "post": {
+        "tags": [
+          "System"
+        ],
+        "summary": "弹出文件夹选择窗口",
+        "description": "由后端调用操作系统的原生文件夹选择对话框。\n\n为什么必须后端做：浏览器不允许网页获取用户选择的绝对路径（webkitdirectory 只给相对路径）。\n\n**这个请求会阻塞**直到用户选完或取消，前端必须把超时设长或设为 0（不超时），否则用户在窗口里翻文件夹超过 30 秒请求就会提前失败。\n\n没有图形界面的环境（Docker、无头服务器）返回 PICKER_UNSUPPORTED，前端应降级为手动输入。",
+        "operationId": "pickDirectory",
+        "x-apifox-status": "developing",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PickDirectoryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "用户选完或取消",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PickDirectoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3906,6 +3949,30 @@
                 "default": 2
               }
             }
+          }
+        }
+      },
+      "PickDirectoryRequest": {
+        "type": "object",
+        "properties": {
+          "initialPath": {
+            "type": "string",
+            "nullable": true,
+            "description": "窗口打开时定位到的目录，不传则用系统默认位置"
+          }
+        }
+      },
+      "PickDirectoryResponse": {
+        "type": "object",
+        "properties": {
+          "picked": {
+            "type": "boolean",
+            "description": "用户是否选了目录。点取消时为 false —— 取消不是错误"
+          },
+          "path": {
+            "type": "string",
+            "nullable": true,
+            "description": "选中的绝对路径，未选中时为 null"
           }
         }
       }

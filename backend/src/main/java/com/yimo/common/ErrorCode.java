@@ -32,6 +32,11 @@ public enum ErrorCode {
     // ===== 通用 =====
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "请求参数不合法"),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "服务内部错误"),
+
+    // ===== 原生对话框 =====
+    PICKER_UNSUPPORTED(HttpStatus.BAD_REQUEST, "当前环境没有图形界面，请手动填写路径"),
+    PICKER_BUSY(HttpStatus.CONFLICT, "已经有一个选择窗口打开了"),
+    PICKER_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "打开选择窗口失败"),
     ;
 
     private final HttpStatus status;

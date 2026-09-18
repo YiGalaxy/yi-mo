@@ -162,6 +162,7 @@ http.interceptors.response.use(
 | [设置](#12-设置-setting) | 5 | 模型配置、偏好 |
 | [统计](#13-统计-stat) | 2 | 写作统计 |
 | [导出](#14-导出-export) | 2 | 导出格式与下载 |
+| [系统](#15-系统-system) | 1 | 调用操作系统的能力（文件夹选择窗口） |
 
 ## 3. 书库 Library
 
@@ -802,7 +803,42 @@ Content-Disposition: attachment; filename="剑来.txt"; filename*=UTF-8''%E5%89%
 
 `filename*` 用 RFC 5987 编码，否则中文书名会乱码。
 
-## 15. 前后端类型对应
+## 15. 系统 System
+
+调用操作系统能力的接口。这些只在本地运行时有意义——亿墨的定位就是本机工具。
+
+### `POST /api/system/pick-directory` — 弹出文件夹选择窗口
+
+**为什么需要后端做这件事**：浏览器出于安全限制，不允许网页获取用户选择的绝对路径（`<input type="file" webkitdirectory>` 只给相对路径）。后端没有这个限制，可以直接调系统的文件夹选择对话框。
+
+```jsonc
+// 请求
+{ "initialPath": "D:\\我的小说" }    // 可选，窗口打开时定位到哪
+
+// 响应 200 — 用户选了
+{ "picked": true, "path": "D:\\我的小说\\剑来" }
+
+// 响应 200 — 用户点了取消
+{ "picked": false, "path": null }
+```
+
+**用户取消不是错误**，所以返回 200 而不是 4xx，用 `picked: false` 区分。
+
+**这个请求会阻塞**，直到用户选完或取消。前端必须把超时设长或者干脆不设（axios 里 `timeout: 0` 表示不超时）：
+
+```ts
+http.post('/system/pick-directory', { initialPath }, { timeout: 0 })
+```
+
+否则用户在窗口里翻文件夹超过 30 秒，请求就会提前失败。
+
+| 错误码 | 场景 |
+|---|---|
+| `PICKER_UNSUPPORTED` | 没有图形界面（Docker、无头服务器）。前端应降级为手动输入 |
+| `PICKER_BUSY` | 已经有一个选择窗口开着。防止连点弹出多个 |
+| `PICKER_FAILED` | 窗口创建失败 |
+
+## 16. 前后端类型对应
 
 后端定义 DTO，前端手写对应的 TypeScript interface。**字段名保持完全一致**（都用 camelCase），不做任何转换——转换是 bug 的温床。
 
@@ -862,7 +898,7 @@ export interface ChapterDetail {
 
 DTO 要传值，构造后不该再改；实体要从数据库读出来填值，必须能被改。这个区别决定了两者写法不同。
 
-## 16. 开发顺序建议
+## 17. 开发顺序建议
 
 接口多，但前后端可以按这个顺序并行推进，每一步都是可验证的：
 
