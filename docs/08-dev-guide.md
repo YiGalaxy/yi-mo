@@ -2801,6 +2801,40 @@ yimo: chapter
 
 Java 的规则：**一个 `.java` 文件只能有一个 `public` 类，且文件名必须和这个 public 类同名**。写在一个文件里编译不过。
 
+#### 为什么 `ParsedMarkdown` 放 `storage` 不放 `dto`
+
+它也是 `record`，看起来像 DTO，但它不是。
+
+**DTO 在这个项目里的约定是「跟前端交互的数据」**：
+
+```
+LibraryCreateRequest   前端 → 后端
+LibraryView            后端 → 前端
+```
+
+`ParsedMarkdown` 从头到尾不出后端——前端根本不知道它存在：
+
+```
+Markdown 文件 → FrontmatterCodec.parse() → ParsedMarkdown → ScanService 取用
+                 ↑ 全程在后端内部
+```
+
+**判断规则**：这个 record 会不会被序列化成 JSON 发给前端？
+
+| 会 | 不会 |
+|---|---|
+| 放 `dto` | 放它所属的模块 |
+
+**放 `storage` 的三个理由**：
+
+1. **它是存储层的实现细节。** 将来如果亿墨支持直接读 `.txt` 或 `.docx`，解析器会变，`ParsedMarkdown` 可能跟着变或者消失。而 `dto` 包里的东西是**接口契约**——改了要同步改前端，轻易动不得。
+
+2. **`dto` 包会变成垃圾桶。** 如果所有 record 都往里塞，打开 `dto` 包分不清哪些是「改了要通知前端」的，哪些是「内部随便改」。这个区分很重要。
+
+3. **内聚性。** `ParsedMarkdown` 只被 `storage` 包里的类创建和消费（现在只有 `FrontmatterCodec`，后面 `FileWriter` 也会用）。放在一起，改它的时候只影响这一个包。
+
+**它更准确的叫法是「值对象」（Value Object）。** `record` 是语言特性，DTO 是用途——同一行 `record` 声明，按用途可以是 DTO（跨边界、有契约含义），也可以是值对象（内部不可变数据）。名字不重要，重要的是**改它的时候你知道会影响谁**。
+
 **文件一**：`backend/src/main/java/com/yimo/storage/ParsedMarkdown.java`
 
 ```java
