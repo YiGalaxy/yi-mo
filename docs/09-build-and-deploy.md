@@ -30,7 +30,7 @@ yi-mo/
 chcp 65001 >nul
 title 亿墨 · 开发模式
 
-echo [1/2] 启动后端 http://127.0.0.1:8080
+echo [1/2] 启动后端 http://127.0.0.1:18080
 start "yimo-backend" cmd /k "cd /d %~dp0..\backend && mvn spring-boot:run"
 
 echo [2/2] 启动前端 http://localhost:5173
@@ -56,9 +56,9 @@ trap 'kill 0' EXIT
 wait
 ```
 
-**开发时的地址是 5173，不是 8080。** 前端代码里所有请求都写相对路径 `/api/xxx`，由 Vite 代理转发到 8080。这样生产环境（前后端同源）一个字都不用改。
+**开发时的地址是 5173，不是 18080。** 前端代码里所有请求都写相对路径 `/api/xxx`，由 Vite 代理转发到 18080。这样生产环境（前后端同源）一个字都不用改。
 
-**绝对不要在代码里写死 `http://localhost:8080`。** 这是最常见的部署事故来源。
+**绝对不要在代码里写死 `http://localhost:18080`。** 这是最常见的部署事故来源。
 
 ## 3. 生产构建：前端打进 jar
 
@@ -160,7 +160,7 @@ mvn -f backend/pom.xml clean package
 java -jar backend/target/yimo-backend-1.0.0.jar
 ```
 
-浏览器打开 `http://127.0.0.1:8080`，应该看到亿墨的界面（不是 Spring 的 Whitelabel 错误页）。
+浏览器打开 `http://127.0.0.1:18080`，应该看到亿墨的界面（不是 Spring 的 Whitelabel 错误页）。
 
 **如果看到 404**：前端产物没拷进去。检查 `backend/target/classes/static/` 里有没有 `index.html`。
 
@@ -185,7 +185,7 @@ public class BrowserLauncher {
 
     private static final Logger log = LoggerFactory.getLogger(BrowserLauncher.class);
 
-    @Value("${server.port:8080}")
+    @Value("${server.port:18080}")
     private int port;
 
     @Value("${yimo.open-browser:true}")
@@ -295,14 +295,14 @@ set /a tries=0
 :wait
 timeout /t 1 >nul
 set /a tries+=1
-netstat -ano | findstr ":8080" | findstr "LISTENING" >nul
+netstat -ano | findstr ":18080" | findstr "LISTENING" >nul
 if not errorlevel 1 goto ready
 if %tries% lss 30 goto wait
 
 echo   [错误] 启动超时（30 秒）
 echo.
 echo   可能的原因：
-echo     1. 8080 端口被其他程序占用
+echo     1. 18080 端口被其他程序占用
 echo     2. MySQL 未启动或连接配置错误
 echo     3. Java 版本不是 21
 echo.
@@ -314,7 +314,7 @@ exit /b 1
 :ready
 echo   [完成] 浏览器即将自动打开
 echo.
-echo   如果没打开，手动访问：http://127.0.0.1:8080
+echo   如果没打开，手动访问：http://127.0.0.1:18080
 echo.
 echo   关闭服务：在任务管理器里结束 Java 进程
 echo.
@@ -352,7 +352,7 @@ set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 JAR="$DIR/yimo.jar"
 LOG="$HOME/.yimo/logs/yimo.log"
-URL="http://127.0.0.1:8080"
+URL="http://127.0.0.1:18080"
 
 if [ ! -f "$JAR" ]; then
   echo "[错误] 找不到 yimo.jar"
@@ -536,7 +536,7 @@ public class WebCacheConfig implements WebMvcConfigurer {
 
 ### 7.3 SPA 路由回退
 
-用户直接访问 `http://127.0.0.1:8080/books/123` 或在页面里刷新，后端会找不到这个路径。要回退到 `index.html` 让前端路由处理。
+用户直接访问 `http://127.0.0.1:18080/books/123` 或在页面里刷新，后端会找不到这个路径。要回退到 `index.html` 让前端路由处理。
 
 ```java
 @Controller

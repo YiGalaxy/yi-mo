@@ -556,7 +556,7 @@ docker compose start      # 起数据库
 
 # 第 1 章 后端骨架
 
-**目标**：跑起来一个 Spring Boot 服务，访问 `http://127.0.0.1:8080/api/ping` 返回 JSON。
+**目标**：跑起来一个 Spring Boot 服务，访问 `http://127.0.0.1:18080/api/ping` 返回 JSON。
 
 ## 1.1 创建项目
 
@@ -566,7 +566,7 @@ docker compose start      # 起数据库
 |---|---|
 | Project | Maven |
 | Language | Java |
-| Spring Boot | 3.5.x（选最新的 3.5，不要选 4.x 或 SNAPSHOT） |
+| Spring Boot | 4.1.1（选最新的 4.x 正式版，不要选 M 或 SNAPSHOT） |
 | Group | `com.yimo` |
 | Artifact | `yimo-backend` |
 | Name | `yimo-backend` |
@@ -581,6 +581,23 @@ docker compose start      # 起数据库
 - Validation
 
 点 **GENERATE**，下载 `yimo-backend.zip`，解压到 `D:\Project\yi-mo\backend`。
+
+**两个会卡住的地方**：
+
+**1. Initializr 显示的版本号和 Maven 里实际的不一样。** 网页上写 `4.1.1.RELEASE`，但 Maven 仓库里的坐标是 `4.1.1`。生成的项目里 pom 是对的，但如果你手动改版本号，**不要带 `.RELEASE` 后缀**——带后缀的 POM 解析不到，会报：
+
+```
+Non-resolvable parent POM ... Could not find artifact
+org.springframework.boot:spring-boot-starter-parent:pom:4.1.1.RELEASE
+```
+
+**2. Spring Boot 4 的 starter 名字变了。** 生成出来的 pom 里是 `spring-boot-starter-webmvc` 而不是 `spring-boot-starter-web`。这不是错误，是 4.x 的新命名，照抄老教程会编译失败。
+
+| Spring Boot 3.x | 4.x |
+|---|---|
+| `spring-boot-starter-web` | `spring-boot-starter-webmvc` |
+| `spring-boot-starter-test` | 按模块拆成 `spring-boot-starter-webmvc-test` 等 |
+| `mybatis-plus-spring-boot3-starter` | `mybatis-plus-spring-boot4-starter` |
 
 ## 1.2 配镜像并补齐依赖
 
@@ -625,8 +642,8 @@ Initializr 给的是基础依赖，MyBatis-Plus、HanLP、Hutool 要手动加。
 <!-- MyBatis-Plus：数据库访问 -->
 <dependency>
     <groupId>com.baomidou</groupId>
-    <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
-    <version>3.5.9</version>
+    <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+    <version>3.5.17</version>
 </dependency>
 
 <!-- 中文分词与 NLP -->
@@ -640,7 +657,7 @@ Initializr 给的是基础依赖，MyBatis-Plus、HanLP、Hutool 要手动加。
 <dependency>
     <groupId>cn.hutool</groupId>
     <artifactId>hutool-all</artifactId>
-    <version>5.8.34</version>
+    <version>5.8.47</version>
 </dependency>
 ```
 
@@ -709,7 +726,7 @@ com.yimo
 ```yaml
 server:
   address: 127.0.0.1          # 只监听本机，不暴露到局域网
-  port: 8080
+  port: 18080
 
 spring:
   application:
@@ -789,27 +806,30 @@ mvn spring-boot:run
 
 ```
 Started YimoApplication in 2.345 seconds (process running for 2.891)
-Tomcat started on port 8080 (http) with context path ''
+Tomcat started on port 18080 (http) with context path ''
 ```
 
 **测试**（另开一个终端）：
 
 ```bash
-curl http://127.0.0.1:8080/api/ping
+curl http://127.0.0.1:18080/api/ping
 ```
 
 预期：
 
 ```json
-{"ok":true,"service":"yimo","time":"2026-09-18T14:30:00+08:00"}
+{"ok":true,"service":"yimo","time":"2026-09-18T14:30:00+08:00","sampleId":"ch_01M2SH979XJAM0FAXK2P5K04G8"}
 ```
+
+`sampleId` 是后端现生成的 ULID。看到它就说明 ID 生成、JSON 序列化都正常。
 
 **到这里第 1 章完成。** 如果连不上，按顺序检查：
 
 | 现象 | 原因 |
 |---|---|
-| `Port 8080 was already in use` | 端口被占。`netstat -ano \| grep 8080` 找进程，或改配置里的端口 |
-| 启动报 `Failed to configure a DataSource` | 数据库连不上。检查 MySQL 服务是否启动、用户名密码对不对 |
+| `Port 18080 was already in use` | 端口被占。亿墨默认用 18080 就是为了避开 8080；如果这个也被占了，换成别的（如 18081），**前端的 `vite.config.ts` 里的代理目标要同步改** |
+| `Failed to configure a DataSource` | 数据库连不上。先 `docker compose ps` 看是不是 `healthy`，再查用户名密码 |
+| `Non-resolvable parent POM` | pom 里的 Spring Boot 版本带了 `.RELEASE` 后缀。改成 `4.1.1` |
 | 访问返回 404 | Controller 不在 `com.yimo` 包下面。Spring Boot 只扫描入口类所在包及其子包 |
 | 中文变问号 | 数据库字符集不对，回 §0.2 第 5 步检查 |
 
@@ -975,7 +995,7 @@ VALUES ('lib_01H8XYZABCDEFGHJKMNPQRS', '测试书库', 'D:\\Writing\\测试');
 **验证**：
 
 ```bash
-curl http://127.0.0.1:8080/api/libraries
+curl http://127.0.0.1:18080/api/libraries
 ```
 
 预期：
@@ -1051,7 +1071,7 @@ npm install -D tailwindcss @tailwindcss/vite
 
 ## 3.3 配置代理
 
-开发时前端跑在 5173，后端跑在 8080。浏览器直接请求 8080 会撞上跨域限制。**在 Vite 里配代理绕过去**。
+开发时前端跑在 5173，后端跑在 18080。浏览器直接请求 18080 会撞上跨域限制。**在 Vite 里配代理绕过去**。
 
 编辑 `frontend/vite.config.ts`：
 
@@ -1070,7 +1090,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: 'http://127.0.0.1:18080',
         changeOrigin: true,
       },
     },
@@ -1078,7 +1098,7 @@ export default defineConfig({
 })
 ```
 
-**原理**：前端请求 `/api/libraries`（相对路径），Vite 开发服务器拦截并转发到 8080。对浏览器来说始终是同源的，没有跨域。
+**原理**：前端请求 `/api/libraries`（相对路径），Vite 开发服务器拦截并转发到 18080。对浏览器来说始终是同源的，没有跨域。
 
 **这样写的好处**：生产环境前后端同源（前端产物打进 jar），代码一个字都不用改。
 
@@ -1088,7 +1108,7 @@ export default defineConfig({
 http://localhost:5173/api/libraries
 ```
 
-**预期**：看到和 `curl http://127.0.0.1:8080/api/libraries` 一样的 JSON。代理通了。
+**预期**：看到和 `curl http://127.0.0.1:18080/api/libraries` 一样的 JSON。代理通了。
 
 ## 3.4 封装 axios
 
@@ -1316,7 +1336,7 @@ public List<Library> list() {
 ```
 
 ```bash
-curl -i http://127.0.0.1:8080/api/libraries
+curl -i http://127.0.0.1:18080/api/libraries
 ```
 
 预期：

@@ -5,7 +5,7 @@
 亿墨是**本地服务 + 浏览器界面**。
 
 ```
-启动脚本  →  Spring Boot 服务启动（localhost:8080）
+启动脚本  →  Spring Boot 服务启动（localhost:18080）
           →  自动打开浏览器
           →  开始写作
 ```
@@ -377,8 +377,8 @@ REST 风格，全部挂在 `/api` 下。
 
 ```bash
 # 开发时
-mvn spring-boot:run          # 后端 :8080
-npm run dev                  # 前端 :5173，代理 /api 到 8080
+mvn spring-boot:run          # 后端 :18080
+npm run dev                  # 前端 :5173，代理 /api 到 18080
 
 # 发布时
 mvn clean package            # 产出 yimo.jar（内嵌前端静态资源）

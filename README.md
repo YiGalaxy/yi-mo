@@ -5,7 +5,7 @@
 双击启动脚本，浏览器打开就是一个编辑器。没有账号，没有云，没有上传。你的书就是你磁盘上的一个文件夹。
 
 ```
-启动脚本  →  Spring Boot 服务（127.0.0.1:8080）  →  自动打开浏览器
+启动脚本  →  Spring Boot 服务（127.0.0.1:18080）  →  自动打开浏览器
 
 浏览器
 ┌──────────────────────────────────────────────┐
@@ -68,7 +68,7 @@
 
 **前端** Vue 3 · TypeScript · Vite · Tiptap · Pinia · Naive UI · Tailwind CSS
 
-**后端** Java 21 · Spring Boot 3 · Spring AI · MyBatis-Plus · HanLP · MySQL 8
+**后端** Java 21 · Spring Boot 4 · Spring AI 2 · MyBatis-Plus · HanLP · MySQL 8
 
 **预留** Python · FastAPI（语义检索、本地模型，见 `03-agent-design.md` §11）
 
@@ -78,9 +78,31 @@
 
 ## 开发状态
 
-设计阶段。文档已完整，尚未有可运行代码。
+骨架已跑通。前后端能启动、能连通，正在做第一个功能（书库管理）。
+
+**已完成**
+- 后端：全局异常处理、ULID 生成、路径安全守卫（含测试）、`/api/ping`
+- 前端：axios 封装、Vite 代理、连通性检测页
+- 环境：Docker Compose 跑 MySQL（端口 3308）
+
+**下一步**：书库管理 —— 添加一个文件夹，让它出现在列表里。见 [开发手册](docs/08-dev-guide.md) §5 迭代 1。
 
 这是一个**学习驱动的项目**——技术选型在满足产品需求的前提下，优先选择能覆盖 Spring Boot、Vue、AI 应用三块主流技能栈的方案。开发顺序见 [接口设计](docs/06-api.md) §16。
+
+## 本地运行
+
+```bash
+# 1. 启动数据库（首次需要 docker compose up -d，之后用 start）
+cd D:/Project/yi-mo && docker compose start
+
+# 2. 启动后端 → http://127.0.0.1:18080
+cd backend && mvn spring-boot:run
+
+# 3. 启动前端 → http://localhost:5173
+cd frontend && npm run dev
+```
+
+浏览器打开 http://localhost:5173，看到绿色的「前后端已连通」就说明环境正常。
 
 ## 许可证
 

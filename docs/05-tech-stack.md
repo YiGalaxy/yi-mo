@@ -8,7 +8,7 @@
 |---|---|---|
 | Vue | 3.5+ | 界面框架 |
 | TypeScript | 5.x，`strict: true` | 语言 |
-| Vite | 7.x | 构建工具 |
+| Vite | 8.x | 构建工具 |
 | Tiptap | 3.x | 富文本编辑器（Vue 3 绑定 `@tiptap/vue-3`） |
 | Pinia | 3.x | 状态管理 |
 | Vue Router | 4.x | 路由 |
@@ -21,14 +21,14 @@
 | 技术 | 版本 | 用途 |
 |---|---|---|
 | Java | 21 (LTS) | 语言 |
-| Spring Boot | 3.5+ | 应用框架 |
+| Spring Boot | 4.1.1 | 应用框架 |
 | Spring Web | — | REST 接口 |
-| Spring AI | 1.x | 大模型调用与工具编排 |
-| MyBatis-Plus | 3.5+ | 数据库访问 |
+| Spring AI | 2.0.1 | 大模型调用与工具编排 |
+| MyBatis-Plus | 3.5.17 | 数据库访问 |
 | MySQL | 8.0+ | 索引、批注、统计、任务 |
 | H2 | 2.x | 内嵌兜底（免装 MySQL） |
 | HanLP | portable 版 | 中文分词、人名识别 |
-| Hutool | 5.x | 工具集（文件、字符串、ID） |
+| Hutool | 5.8.47 | 工具集（文件、字符串、编码） |
 | SSE (`SseEmitter`) | — | 流式推送 |
 
 ### Python（后置，先留接口）
@@ -63,13 +63,23 @@
 
 开源项目一旦混入商业依赖，后患无穷。
 
-### 后端：Spring Boot 3 + Java 21
+### 后端：Spring Boot 4 + Java 21
 
 用户指定，也是国内后端岗位的事实标准。
 
 **Java 21 而非 17**：虚拟线程（Virtual Threads）已转正。AI 调用大量是阻塞式 IO，虚拟线程让"一个请求一个线程"的简单模型能撑住高并发，不需要引入 WebFlux 的响应式复杂度。
 
-**Spring AI 而非手写 HTTP 客户端**：Spring AI 是 Spring 官方 2024 年推出的 AI 框架，提供统一的 `ChatModel` 抽象，一套代码切换 OpenAI / Anthropic / Ollama。还支持工具调用（`@Tool` 注解）、结构化输出、流式响应、对话记忆。手写这些要几百行，且要处理各家 API 差异。
+**注意 Spring Boot 4 的坐标变化**（从 3.x 迁移时最容易踩）：
+
+| 3.x | 4.x |
+|---|---|
+| `spring-boot-starter-web` | `spring-boot-starter-webmvc` |
+| `spring-boot-starter-test` | `spring-boot-starter-webmvc-test` 等按模块拆分 |
+| `mybatis-plus-spring-boot3-starter` | `mybatis-plus-spring-boot4-starter` |
+
+另外 Initializr API 返回的版本号是 `4.1.1.RELEASE`，但 Maven 仓库里的实际坐标是 **`4.1.1`**——带 `.RELEASE` 后缀的 POM 解析不到，这是最开始会卡住的地方。
+
+**Spring AI 而非手写 HTTP 客户端**：Spring AI 提供统一的 `ChatModel` 抽象，一套代码切换 OpenAI / Anthropic / Ollama。还支持工具调用（`@Tool` 注解）、结构化输出、流式响应、对话记忆。手写这些要几百行，且要处理各家 API 差异。Spring AI 2.x 对应 Spring Boot 4。
 
 ### 数据库：MySQL 8
 
@@ -211,12 +221,12 @@ MySQL 8.0+
 
 # 后端
 cd backend
-mvn spring-boot:run              # http://localhost:8080
+mvn spring-boot:run              # http://localhost:18080
 
 # 前端
 cd frontend
 npm install
-npm run dev                      # http://localhost:5173，/api 代理到 8080
+npm run dev                      # http://localhost:5173，/api 代理到 18080
 ```
 
 前后端分离开发时用 5173 端口，Vite 配置里把 `/api` 代理到后端。发布时前端构建产物拷进 `backend/src/main/resources/static/`，打成一个 jar。
