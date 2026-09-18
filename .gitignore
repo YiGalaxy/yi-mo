@@ -1,0 +1,45 @@
+# ===== Java =====
+backend/target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# ===== Node / 前端 =====
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+npm-debug.log*
+pnpm-debug.log*
+
+# ===== Python =====
+python/__pycache__/
+python/.venv/
+python/venv/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/
+!.vscode/extensions.json
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 项目特定 =====
+# 本地测试用的书库
+test-library/
+# 运行日志
+logs/
+*.log
+# 含密钥的本地配置
+backend/src/main/resources/application-local.yml
+.env
+.env.local
+# Docker 本地覆盖配置
+docker-compose.override.yml

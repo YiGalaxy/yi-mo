@@ -1,0 +1,44 @@
+# 亿墨 YI-MO · 开发环境
+#
+# 只跑数据库。前后端代码在本地运行，因为 IDE 断点调试和热重载需要。
+#
+#   docker compose up -d     启动
+#   docker compose stop      停止（数据保留）
+#   docker compose start     再次启动
+#   docker compose down -v   停止并删除数据（慎用）
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: yimo-mysql
+    restart: unless-stopped
+
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev_2026
+      MYSQL_DATABASE: yimo
+      MYSQL_USER: yimo
+      MYSQL_PASSWORD: yimo_dev_2026
+      TZ: Asia/Shanghai
+
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+
+    ports:
+      # 只监听本机，局域网里其他机器连不上。
+      # 用 3308 而不是 3306，避开本机可能已安装的 MySQL 服务。
+      - "127.0.0.1:3308:3306"
+
+    volumes:
+      # 数据存在命名卷里，容器删了数据还在
+      - mysql-data:/var/lib/mysql
+
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_dev_2026"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  mysql-data:
