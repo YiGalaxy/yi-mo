@@ -733,7 +733,7 @@ spring:
     name: yimo
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3308/yimo?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    url: jdbc:mysql://127.0.0.1:3308/yimo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
     username: yimo
     password: yimo_dev_2026
     hikari:
@@ -758,7 +758,7 @@ logging:
 |---|---|
 | `serverTimezone=Asia/Shanghai` | 不加会报时区错误，`datetime` 字段会差 8 小时 |
 | `allowPublicKeyRetrieval=true` | MySQL 8 默认认证方式需要，不加会连不上 |
-| `characterEncoding=utf8mb4` | 中文不乱码 |
+| `characterEncoding=UTF-8` | 中文不乱码。**必须写 `UTF-8`，不能写 `utf8mb4`**——MySQL 驱动不认后者，会报 `Unsupported character encoding 'utf8mb4'`，服务直接起不来 |
 
 ## 1.5 第一个接口
 
@@ -913,13 +913,44 @@ public class Library {
     private LocalDateTime lastOpened;
     private LocalDateTime createdAt;
 
-    // getter / setter 省略，IDE 里 Alt+Insert 生成
+    // ===== getter / setter =====
+    // 不能省。IDEA 里光标放在类里按 Alt+Insert → Getter and Setter 自动生成
+
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getPath() { return path; }
+    public void setPath(String path) { this.path = path; }
+
+    public LocalDateTime getLastOpened() { return lastOpened; }
+    public void setLastOpened(LocalDateTime lastOpened) { this.lastOpened = lastOpened; }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }
 ```
 
 **用普通类不用 record**：MyBatis-Plus 需要无参构造函数和 setter。record 是不可变的，不适合做数据库实体。
 
 **DTO 用 record，实体用普通类。** 这是清晰的分工。
+
+### 为什么 getter / setter 不能省
+
+省掉会得到一个非常诡异的现象：**接口返回 200，但内容是 `[{}]`**——数组里确实有元素，字段却全是空的。
+
+| 缺什么 | 后果 |
+|---|---|
+| 缺 getter | Jackson 序列化成 JSON 时只认 getter，读不到的字段直接不输出。这就是 `[{}]` 的来源 |
+| 缺 setter | MyBatis 从数据库读结果时写不进对象，字段全是 null |
+
+**这个 bug 不报错、不抛异常**，只是数据凭空消失，第一次遇到很难往这个方向想。
+
+**IDEA 里不用手敲**：光标放在类名上，按 `Alt + Insert` → `Getter and Setter` → 全选字段 → 确定。
+
+**另一种办法是 Lombok**：加依赖后在类上加 `@Data`，编译时自动生成。代价是代码里看不到这些方法，调试时容易困惑。学习阶段建议先手写，理解清楚了再用。
 
 ## 2.3 Mapper
 
@@ -987,12 +1018,36 @@ public class LibraryController {
 
 ## 2.5 插一条数据验证
 
-```sql
-INSERT INTO library (id, name, path)
-VALUES ('lib_01H8XYZABCDEFGHJKMNPQRS', '测试书库', 'D:\\Writing\\测试');
+**先看一个必须避开的坑。**
+
+在 PowerShell 或 Git Bash 里直接敲带中文的 `INSERT`，中文会变成 `????`：
+
+```
+id                      name    path
+lib_01H8XYZ...          ????    D:\Writing\??
 ```
 
-**验证**：
+原因：`docker compose exec` 里的 mysql 客户端默认字符集是 **latin1**。中文在传过去之前就被错误解析了，而且**这种丢失不可逆**——`????` 不是显示问题，是数据真的坏了。
+
+**正确的方式**：显式指定 `--default-character-set=utf8mb4`，并用 heredoc 传 SQL（避免命令行参数被 shell 二次编码）。
+
+```bash
+cd D:/Project/yi-mo
+docker compose exec -T mysql mysql --default-character-set=utf8mb4 -uyimo -pyimo_dev_2026 yimo << 'SQLEOF'
+INSERT INTO library (id, name, path)
+VALUES ('lib_01M2SK000000000000000000A1', '测试书库', 'D:/Writing/测试小说');
+SQLEOF
+```
+
+**`path` 这里用正斜杠 `/`。** 反斜杠在 SQL 字符串里是转义字符，写 `'D:\Writing'` 会被解析成 `D:Writing`（反斜杠消失）。要用反斜杠得写 `CONCAT('D:', CHAR(92), 'Writing')`，太麻烦——直接用正斜杠，Java 的 `Path` 在 Windows 上能正确处理。
+
+验证插入结果：
+
+```bash
+docker compose exec -T mysql mysql --default-character-set=utf8mb4 -uyimo -pyimo_dev_2026 yimo -e "SELECT name, path FROM library;"
+```
+
+**验证接口**：
 
 ```bash
 curl http://127.0.0.1:18080/api/libraries
@@ -1001,12 +1056,14 @@ curl http://127.0.0.1:18080/api/libraries
 预期：
 
 ```json
-[{"id":"lib_01H8XYZABCDEFGHJKMNPQRS","name":"测试书库","path":"D:\\Writing\\测试","lastOpened":null,"createdAt":"2026-09-18T14:35:00"}]
+[{"id":"lib_01M2SK000000000000000000A1","name":"测试书库","path":"D:/Writing/测试小说","lastOpened":null,"createdAt":"2026-09-18T17:18:34"}]
 ```
 
 **中文正确显示**，说明编码链路是通的。
 
 **`lastOpened` 是 null 但其他字段有值**——正确，因为插入时没给这个字段。
+
+**如果结果是 `[{}]`**（数组里有元素但字段全空），说明 `Library` 类缺 getter。见 §2.2 的「为什么 getter / setter 不能省」。
 
 **到这里第 2 章完成。** 数据库链路通了，后面所有持久化都照这个模式来。
 
