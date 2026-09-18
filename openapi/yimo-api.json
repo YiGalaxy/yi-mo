@@ -4,82 +4,198 @@
     "title": "亿墨 YI-MO API",
     "description": "本地优先的开源小说创作工作台。服务只监听 127.0.0.1，无认证。\n\n统一约定：\n- 成功直接返回数据体，失败返回统一错误体（不套 code/message/data 外壳）\n- ID 为 26 字符 ULID，带类型前缀（lib_ / bk_ / ch_ / ent_ / rv_ / task_ / th_）\n- 时间为 ISO 8601 带时区偏移\n- 路径为相对书库根的 POSIX 风格路径\n- 分页参数 page 从 0 开始，size 默认 20 最大 200\n\nSSE 接口返回 text/event-stream，事件类型见各自说明。",
     "version": "1.0.0",
-    "license": { "name": "AGPL-3.0", "url": "https://www.gnu.org/licenses/agpl-3.0.html" }
+    "license": {
+      "name": "AGPL-3.0",
+      "url": "https://www.gnu.org/licenses/agpl-3.0.html"
+    }
   },
   "servers": [
-    { "url": "http://127.0.0.1:18080", "description": "本地服务" }
+    {
+      "url": "http://127.0.0.1:18080",
+      "description": "本地服务"
+    }
   ],
   "tags": [
-    { "name": "Library", "description": "书库管理" },
-    { "name": "Tree", "description": "目录树" },
-    { "name": "Chapter", "description": "章节与正文" },
-    { "name": "Review", "description": "批注" },
-    { "name": "Proofread", "description": "校对" },
-    { "name": "Entity", "description": "知识库实体与关系" },
-    { "name": "Search", "description": "检索" },
-    { "name": "Task", "description": "AI 任务队列" },
-    { "name": "Chat", "description": "Agent 对话" },
-    { "name": "Setting", "description": "设置" },
-    { "name": "Stat", "description": "统计" },
-    { "name": "Export", "description": "导出" }
+    {
+      "name": "Library",
+      "description": "书库管理"
+    },
+    {
+      "name": "Tree",
+      "description": "目录树"
+    },
+    {
+      "name": "Chapter",
+      "description": "章节与正文"
+    },
+    {
+      "name": "Review",
+      "description": "批注"
+    },
+    {
+      "name": "Proofread",
+      "description": "校对"
+    },
+    {
+      "name": "Entity",
+      "description": "知识库实体与关系"
+    },
+    {
+      "name": "Search",
+      "description": "检索"
+    },
+    {
+      "name": "Task",
+      "description": "AI 任务队列"
+    },
+    {
+      "name": "Chat",
+      "description": "Agent 对话"
+    },
+    {
+      "name": "Setting",
+      "description": "设置"
+    },
+    {
+      "name": "Stat",
+      "description": "统计"
+    },
+    {
+      "name": "Export",
+      "description": "导出"
+    }
   ],
   "paths": {
-
     "/api/libraries": {
       "get": {
-        "tags": ["Library"],
+        "tags": [
+          "Library"
+        ],
         "summary": "列出所有书库",
         "operationId": "listLibraries",
         "responses": {
           "200": {
             "description": "书库列表",
-            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Library" } } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Library"
+                  }
+                }
+              }
+            }
           }
         }
       },
       "post": {
-        "tags": ["Library"],
+        "tags": [
+          "Library"
+        ],
         "summary": "添加书库",
         "description": "路径必须存在、是目录、有读权限。不要求目录为空——可以指向已有的 Obsidian 库。若目录下没有 .yimo/，按规范推断文件类型。",
         "operationId": "createLibrary",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LibraryCreateRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryCreateRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "201": { "description": "创建成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Library" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "409": { "$ref": "#/components/responses/Conflict" }
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Library"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       }
     },
-
     "/api/libraries/{libraryId}": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Library"],
+        "tags": [
+          "Library"
+        ],
         "summary": "书库详情",
         "operationId": "getLibrary",
         "responses": {
-          "200": { "description": "书库详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Library" } } } },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "书库详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Library"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       },
       "patch": {
-        "tags": ["Library"],
+        "tags": [
+          "Library"
+        ],
         "summary": "重命名书库",
         "description": "只改显示名，不动磁盘目录名。",
         "operationId": "updateLibrary",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "更新成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Library" } } } }
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Library"
+                }
+              }
+            }
+          }
         }
       },
       "delete": {
-        "tags": ["Library"],
+        "tags": [
+          "Library"
+        ],
         "summary": "移除书库",
         "description": "**只从数据库移除记录，绝不删除磁盘文件。** 响应体显式返回 filesDeleted: false，让前端能明确告知用户文件还在原处。",
         "operationId": "removeLibrary",
@@ -91,9 +207,16 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "id": { "type": "string" },
-                    "removed": { "type": "boolean" },
-                    "filesDeleted": { "type": "boolean", "example": false }
+                    "id": {
+                      "type": "string"
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "filesDeleted": {
+                      "type": "boolean",
+                      "example": false
+                    }
                   }
                 }
               }
@@ -102,37 +225,70 @@
         }
       }
     },
-
     "/api/libraries/{libraryId}/open": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "post": {
-        "tags": ["Library"],
+        "tags": [
+          "Library"
+        ],
         "summary": "打开书库",
         "description": "标记为打开，触发增量扫描（比对文件 mtime）。",
         "operationId": "openLibrary",
         "responses": {
-          "200": { "description": "已打开", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Library" } } } }
+          "200": {
+            "description": "已打开",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Library"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/libraries/{libraryId}/rescan": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "post": {
-        "tags": ["Library"],
+        "tags": [
+          "Library"
+        ],
         "summary": "重建索引",
         "description": "强制全量重建，后台执行。返回 taskId，进度走 /api/tasks/{id}/stream。",
         "operationId": "rescanLibrary",
         "responses": {
-          "202": { "description": "已提交", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskAccepted" } } } }
+          "202": {
+            "description": "已提交",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAccepted"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/libraries/{libraryId}/stats": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Library"],
+        "tags": [
+          "Library"
+        ],
         "summary": "书库概览统计",
         "operationId": "getLibraryStats",
         "responses": {
@@ -143,11 +299,21 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "wordCount": { "type": "integer" },
-                    "bookCount": { "type": "integer" },
-                    "chapterCount": { "type": "integer" },
-                    "entityCount": { "type": "integer" },
-                    "pendingReviewCount": { "type": "integer" }
+                    "wordCount": {
+                      "type": "integer"
+                    },
+                    "bookCount": {
+                      "type": "integer"
+                    },
+                    "chapterCount": {
+                      "type": "integer"
+                    },
+                    "entityCount": {
+                      "type": "integer"
+                    },
+                    "pendingReviewCount": {
+                      "type": "integer"
+                    }
                   }
                 }
               }
@@ -156,113 +322,234 @@
         }
       }
     },
-
     "/api/libraries/{libraryId}/tree": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Tree"],
+        "tags": [
+          "Tree"
+        ],
         "summary": "卷章树",
         "description": "返回书库下所有书的卷章结构。未分卷的章节放在 volumes[0]，name 为空字符串。",
         "operationId": "getTree",
         "responses": {
           "200": {
             "description": "树结构",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TreeResponse" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreeResponse"
+                }
+              }
+            }
           }
         }
       }
     },
-
     "/api/chapters/{chapterId}": {
-      "parameters": [{ "$ref": "#/components/parameters/ChapterId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChapterId"
+        }
+      ],
       "get": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "读章节",
         "description": "返回元数据 + 原始 Markdown 正文（不含 frontmatter，已解析成字段）。contentHash 必须原样回传给保存接口做冲突检测。",
         "operationId": "getChapter",
         "responses": {
-          "200": { "description": "章节详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterDetail" } } } },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "章节详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       },
       "patch": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "修改章节元数据",
         "operationId": "updateChapter",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterUpdateRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChapterUpdateRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "更新成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterDetail" } } } },
-          "409": { "$ref": "#/components/responses/Conflict" }
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       },
       "delete": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "删除章节",
         "description": "文件移到 .yimo/trash/，保留 30 天可恢复。",
         "operationId": "deleteChapter",
-        "responses": { "204": { "description": "已删除" } }
+        "responses": {
+          "204": {
+            "description": "已删除"
+          }
+        }
       }
     },
-
     "/api/chapters/{chapterId}/content": {
-      "parameters": [{ "$ref": "#/components/parameters/ChapterId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChapterId"
+        }
+      ],
       "put": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "保存正文",
         "description": "冲突检测：请求的 contentHash 与磁盘当前哈希不一致时返回 409，响应体带磁盘最新内容。\n\n幂等：content 与磁盘完全一致时直接返回成功，不写文件不更新 updatedAt。\n\n原子写入：临时文件 → 原子重命名，绝不直接覆盖。",
         "operationId": "saveChapterContent",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterContentUpdateRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChapterContentUpdateRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "保存成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterContentUpdateResponse" } } } },
-          "404": { "$ref": "#/components/responses/NotFound" },
+          "200": {
+            "description": "保存成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterContentUpdateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
           "409": {
             "description": "文件已被外部修改",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ContentMismatchError" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentMismatchError"
+                }
+              }
+            }
           }
         }
       }
     },
-
     "/api/chapters": {
       "post": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "新建章节",
         "description": "后端负责生成文件名（第003章-泥瓶巷.md）、写入 frontmatter、插入到指定位置。",
         "operationId": "createChapter",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterCreateRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChapterCreateRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "201": { "description": "创建成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterDetail" } } } },
-          "409": { "$ref": "#/components/responses/Conflict" }
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       }
     },
-
     "/api/chapters/{chapterId}/move": {
-      "parameters": [{ "$ref": "#/components/parameters/ChapterId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChapterId"
+        }
+      ],
       "post": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "移动章节",
         "operationId": "moveChapter",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterMoveRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChapterMoveRequest"
+              }
+            }
+          }
         },
-        "responses": { "200": { "description": "已移动", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterDetail" } } } } }
+        "responses": {
+          "200": {
+            "description": "已移动",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDetail"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/chapters/batch-move": {
       "post": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "批量重排",
         "description": "拖拽结束后一次提交，避免多次请求产生中间状态。",
         "operationId": "batchMoveChapters",
@@ -272,17 +559,29 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["items"],
+                "required": [
+                  "items"
+                ],
                 "properties": {
                   "items": {
                     "type": "array",
                     "items": {
                       "type": "object",
-                      "required": ["chapterId", "volume", "order"],
+                      "required": [
+                        "chapterId",
+                        "volume",
+                        "order"
+                      ],
                       "properties": {
-                        "chapterId": { "type": "string" },
-                        "volume": { "type": "string" },
-                        "order": { "type": "integer" }
+                        "chapterId": {
+                          "type": "string"
+                        },
+                        "volume": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        }
                       }
                     }
                   }
@@ -291,14 +590,30 @@
             }
           }
         },
-        "responses": { "200": { "description": "已重排", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TreeResponse" } } } } }
+        "responses": {
+          "200": {
+            "description": "已重排",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreeResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/chapters/{chapterId}/snapshots": {
-      "parameters": [{ "$ref": "#/components/parameters/ChapterId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChapterId"
+        }
+      ],
       "get": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "快照列表",
         "operationId": "listSnapshots",
         "responses": {
@@ -311,10 +626,24 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": { "type": "string" },
-                      "createdAt": { "type": "string", "format": "date-time" },
-                      "wordCount": { "type": "integer" },
-                      "trigger": { "type": "string", "enum": ["auto", "manual", "pre-restore"] }
+                      "id": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "wordCount": {
+                        "type": "integer"
+                      },
+                      "trigger": {
+                        "type": "string",
+                        "enum": [
+                          "auto",
+                          "manual",
+                          "pre-restore"
+                        ]
+                      }
                     }
                   }
                 }
@@ -324,55 +653,162 @@
         }
       },
       "post": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "手动创建快照",
         "operationId": "createSnapshot",
-        "responses": { "201": { "description": "已创建", "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "string" }, "createdAt": { "type": "string", "format": "date-time" } } } } } } }
+        "responses": {
+          "201": {
+            "description": "已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/chapters/{chapterId}/restore": {
-      "parameters": [{ "$ref": "#/components/parameters/ChapterId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChapterId"
+        }
+      ],
       "post": {
-        "tags": ["Chapter"],
+        "tags": [
+          "Chapter"
+        ],
         "summary": "回滚到快照",
         "description": "回滚前自动创建 pre-restore 快照，防止回滚本身成为不可逆操作。",
         "operationId": "restoreSnapshot",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "type": "object", "required": ["snapshotId"], "properties": { "snapshotId": { "type": "string" } } } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "snapshotId"
+                ],
+                "properties": {
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
         },
-        "responses": { "200": { "description": "已回滚", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChapterDetail" } } } } }
+        "responses": {
+          "200": {
+            "description": "已回滚",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDetail"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/chapters/{chapterId}/reviews": {
-      "parameters": [{ "$ref": "#/components/parameters/ChapterId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChapterId"
+        }
+      ],
       "get": {
-        "tags": ["Review"],
+        "tags": [
+          "Review"
+        ],
         "summary": "章节批注",
         "description": "contentHash 让前端知道这批批注基于哪个版本的正文。若与当前正文 hash 不一致，前端要先跑锚点重定位，再把新位置回写。",
         "operationId": "listReviews",
         "parameters": [
-          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["pending", "accepted", "rejected", "orphaned"] } },
-          { "name": "kind", "in": "query", "schema": { "type": "string", "enum": ["typo", "grammar", "style", "consistency", "suggestion"] } }
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "rejected",
+                "orphaned"
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "typo",
+                "grammar",
+                "style",
+                "consistency",
+                "suggestion"
+              ]
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "批注列表", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReviewListResponse" } } } }
+          "200": {
+            "description": "批注列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewListResponse"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/reviews/{reviewId}": {
-      "parameters": [{ "name": "reviewId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "parameters": [
+        {
+          "name": "reviewId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "patch": {
-        "tags": ["Review"],
+        "tags": [
+          "Review"
+        ],
         "summary": "更新批注状态",
         "description": "接受批注会修改正文，触发一次文件写入和 contentHash 更新。前端需拿返回值更新本地 hash。",
         "operationId": "updateReview",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReviewUpdateRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewUpdateRequest"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
@@ -382,9 +818,15 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "id": { "type": "string" },
-                    "status": { "type": "string" },
-                    "chapterContentHash": { "type": "string" }
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "chapterContentHash": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -393,157 +835,359 @@
         }
       },
       "delete": {
-        "tags": ["Review"],
+        "tags": [
+          "Review"
+        ],
         "summary": "删除批注",
         "operationId": "deleteReview",
-        "responses": { "204": { "description": "已删除" } }
+        "responses": {
+          "204": {
+            "description": "已删除"
+          }
+        }
       }
     },
-
     "/api/reviews": {
       "post": {
-        "tags": ["Review"],
+        "tags": [
+          "Review"
+        ],
         "summary": "手动创建批注",
         "description": "作者给自己留的备注。",
         "operationId": "createReview",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReviewCreateRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewCreateRequest"
+              }
+            }
+          }
         },
-        "responses": { "201": { "description": "已创建", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Review" } } } } }
+        "responses": {
+          "201": {
+            "description": "已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Review"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/reviews/batch": {
       "post": {
-        "tags": ["Review"],
+        "tags": [
+          "Review"
+        ],
         "summary": "批量操作批注",
         "description": "**批量接受是一个事务**，要么全成功要么全回滚。部分失败时返回失败清单。",
         "operationId": "batchUpdateReviews",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReviewBatchRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewBatchRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "批量结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReviewBatchResponse" } } } }
+          "200": {
+            "description": "批量结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewBatchResponse"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/libraries/{libraryId}/reviews/orphaned": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Review"],
+        "tags": [
+          "Review"
+        ],
         "summary": "全书已失效批注",
         "description": "锚点无法重定位的批注，保留原文供人工判断，不静默删除。",
         "operationId": "listOrphanedReviews",
         "responses": {
-          "200": { "description": "已失效批注", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Review" } } } } }
+          "200": {
+            "description": "已失效批注",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Review"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/chapters/{chapterId}/proofread": {
-      "parameters": [{ "$ref": "#/components/parameters/ChapterId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChapterId"
+        }
+      ],
       "post": {
-        "tags": ["Proofread"],
+        "tags": [
+          "Proofread"
+        ],
         "summary": "触发校对",
         "description": "立刻返回 taskId 不阻塞。规则引擎结果通常 1 秒内返回，LLM 结果流式返回。订阅 /api/tasks/{id}/stream 获取进度。",
         "operationId": "startProofread",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProofreadRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProofreadRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "202": { "description": "已提交", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProofreadResponse" } } } },
-          "409": { "$ref": "#/components/responses/Conflict" },
-          "429": { "$ref": "#/components/responses/QuotaExceeded" }
+          "202": {
+            "description": "已提交",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofreadResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/QuotaExceeded"
+          }
         }
       }
     },
-
     "/api/libraries/{libraryId}/capabilities": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Proofread"],
+        "tags": [
+          "Proofread"
+        ],
         "summary": "能力状态",
         "description": "前端状态栏直接读这个接口。**降级必须可见**，不能让作者以为检查过了没问题。",
         "operationId": "getCapabilities",
         "responses": {
-          "200": { "description": "能力状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Capabilities" } } } }
+          "200": {
+            "description": "能力状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/libraries/{libraryId}/entities": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Entity"],
+        "tags": [
+          "Entity"
+        ],
         "summary": "实体列表",
         "operationId": "listEntities",
         "parameters": [
-          { "name": "type", "in": "query", "schema": { "type": "string", "enum": ["character", "location", "item", "org", "term"] } },
-          { "name": "q", "in": "query", "description": "按名称或别名模糊匹配", "schema": { "type": "string" } },
-          { "$ref": "#/components/parameters/Page" },
-          { "$ref": "#/components/parameters/Size" }
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "character",
+                "location",
+                "item",
+                "org",
+                "term"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "按名称或别名模糊匹配",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Size"
+          }
         ],
         "responses": {
-          "200": { "description": "实体分页列表", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityPage" } } } }
+          "200": {
+            "description": "实体分页列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityPage"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/entities/{entityId}": {
-      "parameters": [{ "name": "entityId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "parameters": [
+        {
+          "name": "entityId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "get": {
-        "tags": ["Entity"],
+        "tags": [
+          "Entity"
+        ],
         "summary": "实体详情",
         "operationId": "getEntity",
         "responses": {
-          "200": { "description": "实体详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityDetail" } } } }
+          "200": {
+            "description": "实体详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityDetail"
+                }
+              }
+            }
+          }
         }
       },
       "patch": {
-        "tags": ["Entity"],
+        "tags": [
+          "Entity"
+        ],
         "summary": "修改实体",
         "operationId": "updateEntity",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityUpdateRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityUpdateRequest"
+              }
+            }
+          }
         },
-        "responses": { "200": { "description": "更新成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityDetail" } } } } }
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityDetail"
+                }
+              }
+            }
+          }
+        }
       },
       "delete": {
-        "tags": ["Entity"],
+        "tags": [
+          "Entity"
+        ],
         "summary": "删除实体",
         "operationId": "deleteEntity",
-        "responses": { "204": { "description": "已删除" } }
+        "responses": {
+          "204": {
+            "description": "已删除"
+          }
+        }
       }
     },
-
     "/api/entities": {
       "post": {
-        "tags": ["Entity"],
+        "tags": [
+          "Entity"
+        ],
         "summary": "新建实体",
         "description": "会生成对应的 .md 文件。",
         "operationId": "createEntity",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityCreateRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityCreateRequest"
+              }
+            }
+          }
         },
-        "responses": { "201": { "description": "已创建", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityDetail" } } } } }
+        "responses": {
+          "201": {
+            "description": "已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityDetail"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/entities/merge": {
       "post": {
-        "tags": ["Entity"],
+        "tags": [
+          "Entity"
+        ],
         "summary": "合并实体",
         "description": "人工确认的实体消解。**只能由作者显式调用，Agent 不能自动合并。** 被合并的文件移到 .yimo/trash/，可恢复。",
         "operationId": "mergeEntities",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityMergeRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityMergeRequest"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
@@ -553,9 +1197,15 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "target": { "$ref": "#/components/schemas/EntityDetail" },
-                    "mergedMentions": { "type": "integer" },
-                    "deletedFile": { "type": "string" }
+                    "target": {
+                      "$ref": "#/components/schemas/EntityDetail"
+                    },
+                    "mergedMentions": {
+                      "type": "integer"
+                    },
+                    "deletedFile": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -564,11 +1214,16 @@
         }
       }
     },
-
     "/api/libraries/{libraryId}/relations/graph": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Entity"],
+        "tags": [
+          "Entity"
+        ],
         "summary": "关系图数据",
         "operationId": "getRelationGraph",
         "responses": {
@@ -579,8 +1234,18 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "nodes": { "type": "array", "items": { "$ref": "#/components/schemas/GraphNode" } },
-                    "edges": { "type": "array", "items": { "$ref": "#/components/schemas/GraphEdge" } }
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GraphNode"
+                      }
+                    },
+                    "edges": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GraphEdge"
+                      }
+                    }
                   }
                 }
               }
@@ -589,24 +1254,51 @@
         }
       }
     },
-
     "/api/libraries/{libraryId}/entities/pending": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Entity"],
+        "tags": [
+          "Entity"
+        ],
         "summary": "待确认的实体提案",
         "description": "实体消解不确定的项归入这里，让作者一句话解决。",
         "operationId": "listPendingEntities",
         "responses": {
-          "200": { "description": "待确认列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PendingEntity" } } } } }
+          "200": {
+            "description": "待确认列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PendingEntity"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/entities/pending/{pendingId}/confirm": {
-      "parameters": [{ "name": "pendingId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "parameters": [
+        {
+          "name": "pendingId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "post": {
-        "tags": ["Entity"],
+        "tags": [
+          "Entity"
+        ],
         "summary": "确认实体提案",
         "operationId": "confirmPendingEntity",
         "requestBody": {
@@ -615,189 +1307,468 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["action"],
+                "required": [
+                  "action"
+                ],
                 "properties": {
-                  "action": { "type": "string", "enum": ["create-new", "merge-into", "reject"] },
-                  "targetEntityId": { "type": "string", "description": "action = merge-into 时必填" }
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "create-new",
+                      "merge-into",
+                      "reject"
+                    ]
+                  },
+                  "targetEntityId": {
+                    "type": "string",
+                    "description": "action = merge-into 时必填"
+                  }
                 }
               }
             }
           }
         },
-        "responses": { "200": { "description": "已处理", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityDetail" } } } } }
+        "responses": {
+          "200": {
+            "description": "已处理",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityDetail"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/libraries/{libraryId}/search": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Search"],
+        "tags": [
+          "Search"
+        ],
         "summary": "搜索",
         "description": "snippet 里的高亮**只返回位置区间，不返回 HTML 字符串**，前端自己渲染，避免 XSS。\n\nmode=semantic 走后端 → Python 服务；Python 未启用时返回 400。",
         "operationId": "search",
         "parameters": [
-          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
-          { "name": "mode", "in": "query", "schema": { "type": "string", "enum": ["keyword", "semantic"], "default": "keyword" } },
-          { "name": "scope", "in": "query", "schema": { "type": "string", "enum": ["content", "outline", "entity", "all"], "default": "content" } },
-          { "$ref": "#/components/parameters/Page" },
-          { "$ref": "#/components/parameters/Size" }
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "keyword",
+                "semantic"
+              ],
+              "default": "keyword"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "content",
+                "outline",
+                "entity",
+                "all"
+              ],
+              "default": "content"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Size"
+          }
         ],
         "responses": {
-          "200": { "description": "搜索结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } } } }
+          "200": {
+            "description": "搜索结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/tasks": {
       "get": {
-        "tags": ["Task"],
+        "tags": [
+          "Task"
+        ],
         "summary": "任务列表",
         "operationId": "listTasks",
         "parameters": [
-          { "name": "status", "in": "query", "description": "逗号分隔", "schema": { "type": "string", "example": "queued,running" } }
+          {
+            "name": "status",
+            "in": "query",
+            "description": "逗号分隔",
+            "schema": {
+              "type": "string",
+              "example": "queued,running"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "任务列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } } } } }
+          "200": {
+            "description": "任务列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/tasks/{taskId}": {
-      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "parameters": [
+        {
+          "name": "taskId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "get": {
-        "tags": ["Task"],
+        "tags": [
+          "Task"
+        ],
         "summary": "任务状态",
         "operationId": "getTask",
         "responses": {
-          "200": { "description": "任务详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } } }
+          "200": {
+            "description": "任务详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          }
         }
       },
       "delete": {
-        "tags": ["Task"],
+        "tags": [
+          "Task"
+        ],
         "summary": "取消任务",
         "operationId": "cancelTask",
-        "responses": { "204": { "description": "已取消" } }
+        "responses": {
+          "204": {
+            "description": "已取消"
+          }
+        }
       }
     },
-
     "/api/tasks/{taskId}/stream": {
-      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "parameters": [
+        {
+          "name": "taskId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "get": {
-        "tags": ["Task"],
+        "tags": [
+          "Task"
+        ],
         "summary": "任务进度流（SSE）",
         "description": "边算边推。LLM 每返回一条批注就推一个 review 事件，前端立即上屏波浪线。\n\nevent 类型：\n- `progress` 进度：{current, total, message}\n- `review` 新批注：完整的 Review 对象\n- `done` 完成：{reviewCount, usage}\n- `error` 出错：{error, message}",
         "operationId": "streamTask",
         "responses": {
           "200": {
             "description": "SSE 流",
-            "content": { "text/event-stream": { "schema": { "type": "string" } } }
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
     },
-
     "/api/libraries/{libraryId}/threads": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Chat"],
+        "tags": [
+          "Chat"
+        ],
         "summary": "会话列表",
         "operationId": "listThreads",
         "responses": {
-          "200": { "description": "会话列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Thread" } } } } }
+          "200": {
+            "description": "会话列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Thread"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "post": {
-        "tags": ["Chat"],
+        "tags": [
+          "Chat"
+        ],
         "summary": "新建会话",
         "operationId": "createThread",
         "requestBody": {
           "required": false,
-          "content": { "application/json": { "schema": { "type": "object", "properties": { "title": { "type": "string" } } } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
         },
-        "responses": { "201": { "description": "已创建", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Thread" } } } } }
+        "responses": {
+          "201": {
+            "description": "已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/threads/{threadId}/messages": {
-      "parameters": [{ "name": "threadId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "parameters": [
+        {
+          "name": "threadId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "get": {
-        "tags": ["Chat"],
+        "tags": [
+          "Chat"
+        ],
         "summary": "历史消息",
         "operationId": "listMessages",
         "responses": {
-          "200": { "description": "消息列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Message" } } } } }
+          "200": {
+            "description": "消息列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Message"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "post": {
-        "tags": ["Chat"],
+        "tags": [
+          "Chat"
+        ],
         "summary": "发送消息（SSE 流式）",
         "description": "event 类型：\n- `delta` 文本增量：{text}\n- `tool` 工具调用：{name, args, status, summary}\n- `proposal` 产出提案：完整的 Proposal 对象\n- `done` 结束：{threadId, messageId, usage}\n- `error` 出错\n\n**tool 事件必须推给前端。** 让作者看到 AI 正在干什么，比一个转圈的 loading 强得多，也能让作者判断它是不是在瞎搜。",
         "operationId": "sendMessage",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "SSE 流", "content": { "text/event-stream": { "schema": { "type": "string" } } } },
-          "429": { "$ref": "#/components/responses/QuotaExceeded" }
+          "200": {
+            "description": "SSE 流",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/QuotaExceeded"
+          }
         }
       }
     },
-
     "/api/threads/{threadId}": {
-      "parameters": [{ "name": "threadId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "parameters": [
+        {
+          "name": "threadId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "delete": {
-        "tags": ["Chat"],
+        "tags": [
+          "Chat"
+        ],
         "summary": "删除会话",
         "operationId": "deleteThread",
-        "responses": { "204": { "description": "已删除" } }
+        "responses": {
+          "204": {
+            "description": "已删除"
+          }
+        }
       }
     },
-
     "/api/proposals": {
       "get": {
-        "tags": ["Chat"],
+        "tags": [
+          "Chat"
+        ],
         "summary": "当前待确认的提案",
         "description": "提案存在内存中，不落盘。会话结束即消失。",
         "operationId": "listProposals",
         "responses": {
-          "200": { "description": "提案列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Proposal" } } } } }
+          "200": {
+            "description": "提案列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Proposal"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/settings": {
       "get": {
-        "tags": ["Setting"],
+        "tags": [
+          "Setting"
+        ],
         "summary": "读取设置",
         "description": "**API Key 永不回传完整值**，只回传后 4 位用于辨认。",
         "operationId": "getSettings",
         "responses": {
-          "200": { "description": "设置", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Settings" } } } }
+          "200": {
+            "description": "设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          }
         }
       },
       "put": {
-        "tags": ["Setting"],
+        "tags": [
+          "Setting"
+        ],
         "summary": "更新设置",
         "description": "apiKey 传 null 或省略表示不修改。",
         "operationId": "updateSettings",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Settings" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Settings"
+              }
+            }
+          }
         },
-        "responses": { "200": { "description": "更新成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Settings" } } } } }
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/settings/test-model": {
       "post": {
-        "tags": ["Setting"],
+        "tags": [
+          "Setting"
+        ],
         "summary": "测试模型连通性",
         "description": "失败时返回 422 并带具体原因（key 无效 / 额度不足 / 网络不通 / 模型名不存在）。**不做泛化的「连接失败」**——每种原因对应完全不同的处理动作。",
         "operationId": "testModel",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelTestRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelTestRequest"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
@@ -807,105 +1778,257 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "ok": { "type": "boolean" },
-                    "latencyMs": { "type": "integer" },
-                    "modelEcho": { "type": "string" },
-                    "message": { "type": "string" }
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "latencyMs": {
+                      "type": "integer"
+                    },
+                    "modelEcho": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
                   }
                 }
               }
             }
           },
-          "422": { "description": "连通性测试失败", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "422": {
+            "description": "连通性测试失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/settings/models": {
       "get": {
-        "tags": ["Setting"],
+        "tags": [
+          "Setting"
+        ],
         "summary": "拉取可用模型列表",
         "operationId": "listModels",
-        "parameters": [{ "name": "configId", "in": "query", "schema": { "type": "string" } }],
+        "parameters": [
+          {
+            "name": "configId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "模型列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ModelInfo" } } } } }
+          "200": {
+            "description": "模型列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelInfo"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/settings/export": {
       "post": {
-        "tags": ["Setting"],
+        "tags": [
+          "Setting"
+        ],
         "summary": "导出设置",
         "description": "不含 API Key。",
         "operationId": "exportSettings",
-        "responses": { "200": { "description": "设置 JSON", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Settings" } } } } }
+        "responses": {
+          "200": {
+            "description": "设置 JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/settings/import": {
       "post": {
-        "tags": ["Setting"],
+        "tags": [
+          "Setting"
+        ],
         "summary": "导入设置",
         "operationId": "importSettings",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Settings" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Settings"
+              }
+            }
+          }
         },
-        "responses": { "200": { "description": "导入成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Settings" } } } } }
+        "responses": {
+          "200": {
+            "description": "导入成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          }
+        }
       }
     },
-
     "/api/libraries/{libraryId}/stats/writing": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Stat"],
+        "tags": [
+          "Stat"
+        ],
         "summary": "写作统计",
         "description": "数据来自 writing_stat 表。这张表**不在稿件里，丢了不可恢复**，需要提供导出。",
         "operationId": "getWritingStats",
         "parameters": [
-          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
-          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } },
-          { "name": "granularity", "in": "query", "schema": { "type": "string", "enum": ["day", "week", "month"], "default": "day" } }
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month"
+              ],
+              "default": "day"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "写作统计", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WritingStats" } } } }
+          "200": {
+            "description": "写作统计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WritingStats"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/libraries/{libraryId}/stats/progress": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "get": {
-        "tags": ["Stat"],
+        "tags": [
+          "Stat"
+        ],
         "summary": "进度统计",
         "operationId": "getProgressStats",
         "responses": {
-          "200": { "description": "进度统计", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProgressStats" } } } }
+          "200": {
+            "description": "进度统计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressStats"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/libraries/{libraryId}/export": {
-      "parameters": [{ "$ref": "#/components/parameters/LibraryId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/LibraryId"
+        }
+      ],
       "post": {
-        "tags": ["Export"],
+        "tags": [
+          "Export"
+        ],
         "summary": "触发导出",
         "operationId": "startExport",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExportRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "202": { "description": "已提交", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskAccepted" } } } }
+          "202": {
+            "description": "已提交",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAccepted"
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/exports/{taskId}/download": {
-      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "parameters": [
+        {
+          "name": "taskId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "get": {
-        "tags": ["Export"],
+        "tags": [
+          "Export"
+        ],
         "summary": "下载导出文件",
         "description": "Content-Disposition 用 RFC 5987 的 filename* 编码中文书名，否则会乱码。",
         "operationId": "downloadExport",
@@ -914,382 +2037,931 @@
             "description": "文件流",
             "headers": {
               "Content-Disposition": {
-                "schema": { "type": "string" },
+                "schema": {
+                  "type": "string"
+                },
                 "example": "attachment; filename=\"jianlai.txt\"; filename*=UTF-8''%E5%89%91%E6%9D%A5.txt"
               }
             },
-            "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } }
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     }
   },
-
   "components": {
     "parameters": {
-      "LibraryId": { "name": "libraryId", "in": "path", "required": true, "schema": { "type": "string" }, "example": "lib_01H8XYZABCDEFGHJKMNPQRS" },
-      "ChapterId": { "name": "chapterId", "in": "path", "required": true, "schema": { "type": "string" }, "example": "ch_01H8XYZABCDEFGHJKMNPQRS" },
-      "Page": { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } },
-      "Size": { "name": "size", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 20 } }
+      "LibraryId": {
+        "name": "libraryId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "example": "lib_01H8XYZABCDEFGHJKMNPQRS"
+      },
+      "ChapterId": {
+        "name": "chapterId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "example": "ch_01H8XYZABCDEFGHJKMNPQRS"
+      },
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "Size": {
+        "name": "size",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      }
     },
-
     "responses": {
-      "BadRequest": { "description": "请求参数错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "NotFound": { "description": "资源不存在", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "Conflict": { "description": "冲突", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "QuotaExceeded": { "description": "已达每日用量上限", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+      "BadRequest": {
+        "description": "请求参数错误",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "资源不存在",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "冲突",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "QuotaExceeded": {
+        "description": "已达每日用量上限",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
     },
-
     "schemas": {
       "Error": {
         "type": "object",
-        "required": ["error", "message", "timestamp"],
+        "required": [
+          "error",
+          "message",
+          "timestamp"
+        ],
         "properties": {
-          "error": { "type": "string", "description": "错误码", "example": "CHAPTER_NOT_FOUND" },
-          "message": { "type": "string", "example": "章节不存在" },
-          "details": { "type": "object", "additionalProperties": true },
-          "timestamp": { "type": "string", "format": "date-time" }
+          "error": {
+            "type": "string",
+            "description": "错误码",
+            "example": "CHAPTER_NOT_FOUND"
+          },
+          "message": {
+            "type": "string",
+            "example": "章节不存在"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
-
       "ContentMismatchError": {
         "allOf": [
-          { "$ref": "#/components/schemas/Error" },
+          {
+            "$ref": "#/components/schemas/Error"
+          },
           {
             "type": "object",
             "properties": {
-              "error": { "type": "string", "example": "CONTENT_HASH_MISMATCH" },
+              "error": {
+                "type": "string",
+                "example": "CONTENT_HASH_MISMATCH"
+              },
               "details": {
                 "type": "object",
                 "properties": {
-                  "currentHash": { "type": "string" },
-                  "currentContent": { "type": "string", "description": "磁盘上的最新内容，供前端弹窗对比" },
-                  "modifiedAt": { "type": "string", "format": "date-time" }
+                  "currentHash": {
+                    "type": "string"
+                  },
+                  "currentContent": {
+                    "type": "string",
+                    "description": "磁盘上的最新内容，供前端弹窗对比"
+                  },
+                  "modifiedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
                 }
               }
             }
           }
         ]
       },
-
       "Library": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "example": "lib_01H8XYZABCDEFGHJKMNPQRS" },
-          "name": { "type": "string", "example": "我的小说" },
-          "path": { "type": "string", "example": "D:\\\\Writing\\\\我的小说" },
-          "bookCount": { "type": "integer", "example": 3 },
-          "wordCount": { "type": "integer", "example": 1284000 },
-          "lastOpenedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string",
+            "example": "lib_01H8XYZABCDEFGHJKMNPQRS"
+          },
+          "name": {
+            "type": "string",
+            "example": "我的小说"
+          },
+          "path": {
+            "type": "string",
+            "example": "D:\\\\Writing\\\\我的小说"
+          },
+          "bookCount": {
+            "type": "integer",
+            "example": 3
+          },
+          "wordCount": {
+            "type": "integer",
+            "example": 1284000
+          },
+          "lastOpenedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
-
       "LibraryCreateRequest": {
         "type": "object",
-        "required": ["path"],
+        "required": [
+          "path"
+        ],
         "properties": {
-          "path": { "type": "string", "example": "D:\\\\Writing\\\\我的小说" },
-          "name": { "type": "string", "description": "不传则取目录名" }
+          "path": {
+            "type": "string",
+            "example": "D:\\\\Writing\\\\我的小说"
+          },
+          "name": {
+            "type": "string",
+            "description": "不传则取目录名"
+          }
         }
       },
-
       "TreeResponse": {
         "type": "object",
-        "properties": { "books": { "type": "array", "items": { "$ref": "#/components/schemas/BookNode" } } }
-      },
-
-      "BookNode": {
-        "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string", "example": "剑来" },
-          "relPath": { "type": "string", "example": "剑来" },
-          "volumes": { "type": "array", "items": { "$ref": "#/components/schemas/VolumeNode" } },
-          "totalWords": { "type": "integer" },
-          "chapterCount": { "type": "integer" }
-        }
-      },
-
-      "VolumeNode": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string", "example": "第一卷 少年游" },
-          "chapters": { "type": "array", "items": { "$ref": "#/components/schemas/ChapterBrief" } }
-        }
-      },
-
-      "ChapterBrief": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string", "example": "第一章 雪夜" },
-          "relPath": { "type": "string", "example": "剑来/07-正文/第001章-雪夜.md" },
-          "order": { "type": "integer" },
-          "status": { "type": "string", "enum": ["draft", "revising", "done"] },
-          "wordCount": { "type": "integer" },
-          "hasReviews": { "type": "boolean" },
-          "pendingReviewCount": { "type": "integer" }
-        }
-      },
-
-      "ChapterDetail": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "bookId": { "type": "string" },
-          "relPath": { "type": "string" },
-          "title": { "type": "string" },
-          "volume": { "type": "string" },
-          "order": { "type": "integer" },
-          "status": { "type": "string", "enum": ["draft", "revising", "done"] },
-          "pov": { "type": "string", "nullable": true },
-          "characters": { "type": "array", "items": { "type": "string" } },
-          "locations": { "type": "array", "items": { "type": "string" } },
-          "storyTime": { "type": "string", "nullable": true },
-          "summary": { "type": "string", "nullable": true },
-          "wordCount": { "type": "integer" },
-          "contentHash": { "type": "string", "description": "保存时必须原样回传，用于冲突检测" },
-          "content": { "type": "string", "description": "原始 Markdown 正文，不含 frontmatter" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
-        }
-      },
-
-      "ChapterCreateRequest": {
-        "type": "object",
-        "required": ["bookId", "title"],
-        "properties": {
-          "bookId": { "type": "string" },
-          "title": { "type": "string", "example": "第三章 泥瓶巷" },
-          "volume": { "type": "string", "nullable": true },
-          "afterChapterId": { "type": "string", "nullable": true, "description": "插在这章之后，null 表示追加到末尾" },
-          "content": { "type": "string", "default": "" }
-        }
-      },
-
-      "ChapterUpdateRequest": {
-        "type": "object",
-        "properties": {
-          "title": { "type": "string" },
-          "status": { "type": "string", "enum": ["draft", "revising", "done"] },
-          "volume": { "type": "string", "nullable": true },
-          "pov": { "type": "string", "nullable": true },
-          "storyTime": { "type": "string", "nullable": true },
-          "summary": { "type": "string", "nullable": true }
-        }
-      },
-
-      "ChapterContentUpdateRequest": {
-        "type": "object",
-        "required": ["content", "contentHash"],
-        "properties": {
-          "content": { "type": "string" },
-          "contentHash": { "type": "string", "description": "从 GET /api/chapters/{id} 拿到的值" },
-          "createSnapshot": { "type": "boolean", "default": false }
-        }
-      },
-
-      "ChapterContentUpdateResponse": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "contentHash": { "type": "string", "description": "新的哈希，前端需更新本地值" },
-          "wordCount": { "type": "integer" },
-          "savedAt": { "type": "string", "format": "date-time" },
-          "snapshotCreated": { "type": "boolean" }
-        }
-      },
-
-      "ChapterMoveRequest": {
-        "type": "object",
-        "properties": {
-          "targetVolume": { "type": "string", "nullable": true },
-          "beforeChapterId": { "type": "string", "nullable": true }
-        }
-      },
-
-      "ReviewAnchor": {
-        "type": "object",
-        "required": ["from", "to", "quote", "prefix", "suffix"],
-        "properties": {
-          "from": { "type": "integer", "description": "文档偏移量（快速路径）" },
-          "to": { "type": "integer" },
-          "quote": { "type": "string", "description": "原文" },
-          "prefix": { "type": "string", "description": "前 32 字符指纹" },
-          "suffix": { "type": "string", "description": "后 32 字符指纹" }
-        }
-      },
-
-      "Review": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "chapterId": { "type": "string" },
-          "kind": { "type": "string", "enum": ["typo", "grammar", "style", "consistency", "suggestion"] },
-          "severity": { "type": "string", "enum": ["error", "warning", "info"] },
-          "anchor": { "$ref": "#/components/schemas/ReviewAnchor" },
-          "message": { "type": "string", "example": "「在」应为「再」" },
-          "suggestions": { "type": "array", "items": { "type": "string" }, "example": ["再"] },
-          "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "orphaned"] },
-          "source": { "type": "string", "enum": ["rule", "llm"] },
-          "ruleId": { "type": "string", "nullable": true, "example": "zai-vs-zai" },
-          "confidence": { "type": "number", "format": "double", "minimum": 0, "maximum": 1 },
-          "createdAt": { "type": "string", "format": "date-time" }
-        }
-      },
-
-      "ReviewListResponse": {
-        "type": "object",
-        "properties": {
-          "chapterId": { "type": "string" },
-          "contentHash": { "type": "string", "description": "这批批注基于的正文版本" },
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/Review" } },
-          "summary": {
-            "type": "object",
-            "properties": {
-              "pending": { "type": "integer" },
-              "accepted": { "type": "integer" },
-              "rejected": { "type": "integer" },
-              "orphaned": { "type": "integer" }
+          "books": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookNode"
             }
           }
         }
       },
-
+      "BookNode": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "example": "剑来"
+          },
+          "relPath": {
+            "type": "string",
+            "example": "剑来"
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeNode"
+            }
+          },
+          "totalWords": {
+            "type": "integer"
+          },
+          "chapterCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "VolumeNode": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "第一卷 少年游"
+          },
+          "chapters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChapterBrief"
+            }
+          }
+        }
+      },
+      "ChapterBrief": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "example": "第一章 雪夜"
+          },
+          "relPath": {
+            "type": "string",
+            "example": "剑来/07-正文/第001章-雪夜.md"
+          },
+          "order": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "revising",
+              "done"
+            ]
+          },
+          "wordCount": {
+            "type": "integer"
+          },
+          "hasReviews": {
+            "type": "boolean"
+          },
+          "pendingReviewCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "ChapterDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bookId": {
+            "type": "string"
+          },
+          "relPath": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "revising",
+              "done"
+            ]
+          },
+          "pov": {
+            "type": "string",
+            "nullable": true
+          },
+          "characters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "locations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "storyTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "summary": {
+            "type": "string",
+            "nullable": true
+          },
+          "wordCount": {
+            "type": "integer"
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "保存时必须原样回传，用于冲突检测"
+          },
+          "content": {
+            "type": "string",
+            "description": "原始 Markdown 正文，不含 frontmatter"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ChapterCreateRequest": {
+        "type": "object",
+        "required": [
+          "bookId",
+          "title"
+        ],
+        "properties": {
+          "bookId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "example": "第三章 泥瓶巷"
+          },
+          "volume": {
+            "type": "string",
+            "nullable": true
+          },
+          "afterChapterId": {
+            "type": "string",
+            "nullable": true,
+            "description": "插在这章之后，null 表示追加到末尾"
+          },
+          "content": {
+            "type": "string",
+            "default": ""
+          }
+        }
+      },
+      "ChapterUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "revising",
+              "done"
+            ]
+          },
+          "volume": {
+            "type": "string",
+            "nullable": true
+          },
+          "pov": {
+            "type": "string",
+            "nullable": true
+          },
+          "storyTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "summary": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ChapterContentUpdateRequest": {
+        "type": "object",
+        "required": [
+          "content",
+          "contentHash"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "从 GET /api/chapters/{id} 拿到的值"
+          },
+          "createSnapshot": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ChapterContentUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "新的哈希，前端需更新本地值"
+          },
+          "wordCount": {
+            "type": "integer"
+          },
+          "savedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "snapshotCreated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ChapterMoveRequest": {
+        "type": "object",
+        "properties": {
+          "targetVolume": {
+            "type": "string",
+            "nullable": true
+          },
+          "beforeChapterId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ReviewAnchor": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "quote",
+          "prefix",
+          "suffix"
+        ],
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "文档偏移量（快速路径）"
+          },
+          "to": {
+            "type": "integer"
+          },
+          "quote": {
+            "type": "string",
+            "description": "原文"
+          },
+          "prefix": {
+            "type": "string",
+            "description": "前 32 字符指纹"
+          },
+          "suffix": {
+            "type": "string",
+            "description": "后 32 字符指纹"
+          }
+        }
+      },
+      "Review": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapterId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "typo",
+              "grammar",
+              "style",
+              "consistency",
+              "suggestion"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ]
+          },
+          "anchor": {
+            "$ref": "#/components/schemas/ReviewAnchor"
+          },
+          "message": {
+            "type": "string",
+            "example": "「在」应为「再」"
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "再"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "rejected",
+              "orphaned"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "rule",
+              "llm"
+            ]
+          },
+          "ruleId": {
+            "type": "string",
+            "nullable": true,
+            "example": "zai-vs-zai"
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReviewListResponse": {
+        "type": "object",
+        "properties": {
+          "chapterId": {
+            "type": "string"
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "这批批注基于的正文版本"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Review"
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "pending": {
+                "type": "integer"
+              },
+              "accepted": {
+                "type": "integer"
+              },
+              "rejected": {
+                "type": "integer"
+              },
+              "orphaned": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
       "ReviewCreateRequest": {
         "type": "object",
-        "required": ["chapterId", "anchor", "message"],
+        "required": [
+          "chapterId",
+          "anchor",
+          "message"
+        ],
         "properties": {
-          "chapterId": { "type": "string" },
-          "kind": { "type": "string", "enum": ["typo", "grammar", "style", "consistency", "suggestion"], "default": "suggestion" },
-          "anchor": { "$ref": "#/components/schemas/ReviewAnchor" },
-          "message": { "type": "string" },
-          "suggestions": { "type": "array", "items": { "type": "string" } }
+          "chapterId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "typo",
+              "grammar",
+              "style",
+              "consistency",
+              "suggestion"
+            ],
+            "default": "suggestion"
+          },
+          "anchor": {
+            "$ref": "#/components/schemas/ReviewAnchor"
+          },
+          "message": {
+            "type": "string"
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
-
       "ReviewUpdateRequest": {
         "type": "object",
-        "required": ["status"],
+        "required": [
+          "status"
+        ],
         "properties": {
-          "status": { "type": "string", "enum": ["accepted", "rejected", "pending"] },
-          "appliedText": { "type": "string", "description": "接受时实际替换的文本" },
-          "anchor": { "$ref": "#/components/schemas/ReviewAnchor" }
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected",
+              "pending"
+            ]
+          },
+          "appliedText": {
+            "type": "string",
+            "description": "接受时实际替换的文本"
+          },
+          "anchor": {
+            "$ref": "#/components/schemas/ReviewAnchor"
+          }
         }
       },
-
       "ReviewBatchRequest": {
         "type": "object",
-        "required": ["ids", "action"],
+        "required": [
+          "ids",
+          "action"
+        ],
         "properties": {
-          "ids": { "type": "array", "items": { "type": "string" } },
-          "action": { "type": "string", "enum": ["accept", "reject", "ignore-rule"] },
-          "ruleId": { "type": "string", "description": "action = ignore-rule 时必填" }
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "reject",
+              "ignore-rule"
+            ]
+          },
+          "ruleId": {
+            "type": "string",
+            "description": "action = ignore-rule 时必填"
+          }
         }
       },
-
       "ReviewBatchResponse": {
         "type": "object",
         "properties": {
-          "succeeded": { "type": "integer" },
+          "succeeded": {
+            "type": "integer"
+          },
           "failed": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string" },
-                "reason": { "type": "string", "example": "ANCHOR_ORPHANED" }
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "example": "ANCHOR_ORPHANED"
+                }
               }
             }
           },
-          "chapterContentHash": { "type": "string" }
+          "chapterContentHash": {
+            "type": "string"
+          }
         }
       },
-
       "ProofreadRequest": {
         "type": "object",
-        "required": ["engine"],
+        "required": [
+          "engine"
+        ],
         "properties": {
-          "engine": { "type": "string", "enum": ["rule", "llm", "both"] },
-          "scope": { "type": "string", "enum": ["chapter", "selection"], "default": "chapter" },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "rule",
+              "llm",
+              "both"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "selection"
+            ],
+            "default": "chapter"
+          },
           "selection": {
             "type": "object",
             "description": "scope = selection 时必填",
-            "properties": { "from": { "type": "integer" }, "to": { "type": "integer" } }
+            "properties": {
+              "from": {
+                "type": "integer"
+              },
+              "to": {
+                "type": "integer"
+              }
+            }
           },
-          "force": { "type": "boolean", "default": false, "description": "true 则忽略缓存强制重跑" }
+          "force": {
+            "type": "boolean",
+            "default": false,
+            "description": "true 则忽略缓存强制重跑"
+          }
         }
       },
-
       "ProofreadResponse": {
         "type": "object",
         "properties": {
-          "taskId": { "type": "string" },
-          "engine": { "type": "string" },
-          "estimatedSeconds": { "type": "integer" },
-          "cached": { "type": "boolean" }
+          "taskId": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "estimatedSeconds": {
+            "type": "integer"
+          },
+          "cached": {
+            "type": "boolean"
+          }
         }
       },
-
       "Capabilities": {
         "type": "object",
         "properties": {
           "ruleEngine": {
             "type": "object",
             "properties": {
-              "available": { "type": "boolean" },
-              "ruleCount": { "type": "integer" },
-              "enabledRuleCount": { "type": "integer" }
+              "available": {
+                "type": "boolean"
+              },
+              "ruleCount": {
+                "type": "integer"
+              },
+              "enabledRuleCount": {
+                "type": "integer"
+              }
             }
           },
           "llm": {
             "type": "object",
             "properties": {
-              "available": { "type": "boolean" },
-              "provider": { "type": "string" },
-              "model": { "type": "string" },
-              "degraded": { "type": "boolean" }
+              "available": {
+                "type": "boolean"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "degraded": {
+                "type": "boolean"
+              }
             }
           },
           "python": {
             "type": "object",
             "properties": {
-              "available": { "type": "boolean" },
-              "reason": { "type": "string", "nullable": true, "example": "NOT_CONFIGURED" }
+              "available": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string",
+                "nullable": true,
+                "example": "NOT_CONFIGURED"
+              }
             }
           },
           "quota": {
             "type": "object",
             "properties": {
-              "dailyLimit": { "type": "integer" },
-              "used": { "type": "integer" },
-              "resetAt": { "type": "string", "format": "date-time" }
+              "dailyLimit": {
+                "type": "integer"
+              },
+              "used": {
+                "type": "integer"
+              },
+              "resetAt": {
+                "type": "string",
+                "format": "date-time"
+              }
             }
           }
         }
       },
-
       "EntityBrief": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "type": { "type": "string", "enum": ["character", "location", "item", "org", "term"] },
-          "name": { "type": "string" },
-          "aliases": { "type": "array", "items": { "type": "string" } },
-          "status": { "type": "string", "nullable": true, "description": "人物专用：alive / dead / missing / unknown" },
-          "filePath": { "type": "string" },
-          "firstAppear": { "type": "string", "nullable": true },
-          "mentionCount": { "type": "integer" },
-          "attributes": { "type": "object", "additionalProperties": true },
-          "updatedAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "character",
+              "location",
+              "item",
+              "org",
+              "term"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "nullable": true,
+            "description": "人物专用：alive / dead / missing / unknown"
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "firstAppear": {
+            "type": "string",
+            "nullable": true
+          },
+          "mentionCount": {
+            "type": "integer"
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
-
       "EntityDetail": {
         "allOf": [
-          { "$ref": "#/components/schemas/EntityBrief" },
+          {
+            "$ref": "#/components/schemas/EntityBrief"
+          },
           {
             "type": "object",
             "properties": {
@@ -1298,10 +2970,19 @@
                 "items": {
                   "type": "object",
                   "properties": {
-                    "targetId": { "type": "string" },
-                    "targetName": { "type": "string" },
-                    "type": { "type": "string", "example": "道侣" },
-                    "note": { "type": "string" }
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "targetName": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "example": "道侣"
+                    },
+                    "note": {
+                      "type": "string"
+                    }
                   }
                 }
               },
@@ -1310,349 +2991,752 @@
                 "items": {
                   "type": "object",
                   "properties": {
-                    "chapterId": { "type": "string" },
-                    "chapterTitle": { "type": "string" },
-                    "kind": { "type": "string", "enum": ["appear", "mentioned"] },
-                    "count": { "type": "integer" }
+                    "chapterId": {
+                      "type": "string"
+                    },
+                    "chapterTitle": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "appear",
+                        "mentioned"
+                      ]
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
                   }
                 }
               },
-              "body": { "type": "string", "description": "实体卡文件里 frontmatter 之后的自由文本" }
+              "body": {
+                "type": "string",
+                "description": "实体卡文件里 frontmatter 之后的自由文本"
+              }
             }
           }
         ]
       },
-
       "EntityPage": {
         "type": "object",
         "properties": {
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/EntityBrief" } },
-          "page": { "type": "integer" },
-          "size": { "type": "integer" },
-          "total": { "type": "integer" },
-          "hasNext": { "type": "boolean" }
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntityBrief"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "hasNext": {
+            "type": "boolean"
+          }
         }
       },
-
       "EntityCreateRequest": {
         "type": "object",
-        "required": ["libraryId", "type", "name"],
+        "required": [
+          "libraryId",
+          "type",
+          "name"
+        ],
         "properties": {
-          "libraryId": { "type": "string" },
-          "type": { "type": "string", "enum": ["character", "location", "item", "org", "term"] },
-          "name": { "type": "string" },
-          "aliases": { "type": "array", "items": { "type": "string" } },
-          "attributes": { "type": "object", "additionalProperties": true },
-          "body": { "type": "string" }
+          "libraryId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "character",
+              "location",
+              "item",
+              "org",
+              "term"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "body": {
+            "type": "string"
+          }
         }
       },
-
       "EntityUpdateRequest": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "aliases": { "type": "array", "items": { "type": "string" } },
-          "status": { "type": "string" },
-          "attributes": { "type": "object", "additionalProperties": true },
-          "body": { "type": "string" },
+          "name": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "body": {
+            "type": "string"
+          },
           "relations": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "targetId": { "type": "string" },
-                "type": { "type": "string" },
-                "note": { "type": "string" }
+                "targetId": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                }
               }
             }
           }
         }
       },
-
       "EntityMergeRequest": {
         "type": "object",
-        "required": ["sourceId", "targetId"],
+        "required": [
+          "sourceId",
+          "targetId"
+        ],
         "properties": {
-          "sourceId": { "type": "string", "description": "被合并掉的" },
-          "targetId": { "type": "string", "description": "保留的" },
-          "mergeAliases": { "type": "boolean", "default": true },
-          "redirectMentions": { "type": "boolean", "default": true }
+          "sourceId": {
+            "type": "string",
+            "description": "被合并掉的"
+          },
+          "targetId": {
+            "type": "string",
+            "description": "保留的"
+          },
+          "mergeAliases": {
+            "type": "boolean",
+            "default": true
+          },
+          "redirectMentions": {
+            "type": "boolean",
+            "default": true
+          }
         }
       },
-
       "GraphNode": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "type": { "type": "string" },
-          "mentionCount": { "type": "integer" }
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "mentionCount": {
+            "type": "integer"
+          }
         }
       },
-
       "GraphEdge": {
         "type": "object",
         "properties": {
-          "source": { "type": "string" },
-          "target": { "type": "string" },
-          "type": { "type": "string" },
-          "note": { "type": "string" }
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
         }
       },
-
       "PendingEntity": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "candidateName": { "type": "string", "example": "平安" },
-          "context": { "type": "string", "description": "判定依据的原文片段" },
-          "chapterId": { "type": "string" },
+          "id": {
+            "type": "string"
+          },
+          "candidateName": {
+            "type": "string",
+            "example": "平安"
+          },
+          "context": {
+            "type": "string",
+            "description": "判定依据的原文片段"
+          },
+          "chapterId": {
+            "type": "string"
+          },
           "possibleMatches": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "entityId": { "type": "string" },
-                "entityName": { "type": "string" },
-                "similarity": { "type": "number" }
+                "entityId": {
+                  "type": "string"
+                },
+                "entityName": {
+                  "type": "string"
+                },
+                "similarity": {
+                  "type": "number"
+                }
               }
             }
           }
         }
       },
-
       "SearchResponse": {
         "type": "object",
         "properties": {
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/SearchHit" } },
-          "page": { "type": "integer" },
-          "size": { "type": "integer" },
-          "total": { "type": "integer" },
-          "hasNext": { "type": "boolean" },
-          "mode": { "type": "string" },
-          "tookMs": { "type": "integer" }
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "hasNext": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "tookMs": {
+            "type": "integer"
+          }
         }
       },
-
       "SearchHit": {
         "type": "object",
         "properties": {
-          "chapterId": { "type": "string" },
-          "chapterTitle": { "type": "string" },
-          "volume": { "type": "string" },
-          "relPath": { "type": "string" },
-          "snippet": { "type": "string", "description": "纯文本片段，不含 HTML" },
+          "chapterId": {
+            "type": "string"
+          },
+          "chapterTitle": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "string"
+          },
+          "relPath": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string",
+            "description": "纯文本片段，不含 HTML"
+          },
           "highlights": {
             "type": "array",
             "description": "高亮区间，前端自己渲染，避免 XSS",
             "items": {
               "type": "object",
-              "properties": { "start": { "type": "integer" }, "end": { "type": "integer" } }
+              "properties": {
+                "start": {
+                  "type": "integer"
+                },
+                "end": {
+                  "type": "integer"
+                }
+              }
             }
           },
-          "score": { "type": "number" }
+          "score": {
+            "type": "number"
+          }
         }
       },
-
       "Task": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "kind": { "type": "string", "enum": ["proofread", "extract", "summary", "consistency", "scan", "export"] },
-          "status": { "type": "string", "enum": ["queued", "running", "done", "failed", "cancelled"] },
-          "chapterId": { "type": "string", "nullable": true },
-          "model": { "type": "string", "nullable": true },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "proofread",
+              "extract",
+              "summary",
+              "consistency",
+              "scan",
+              "export"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "chapterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
           "progress": {
             "type": "object",
             "nullable": true,
             "properties": {
-              "current": { "type": "integer" },
-              "total": { "type": "integer" },
-              "message": { "type": "string" }
+              "current": {
+                "type": "integer"
+              },
+              "total": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              }
             }
           },
-          "partialResult": { "type": "object", "additionalProperties": true, "nullable": true },
+          "partialResult": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          },
           "usage": {
             "type": "object",
-            "properties": { "inputTokens": { "type": "integer" }, "outputTokens": { "type": "integer" } }
+            "properties": {
+              "inputTokens": {
+                "type": "integer"
+              },
+              "outputTokens": {
+                "type": "integer"
+              }
+            }
           },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "finishedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "error": { "type": "string", "nullable": true }
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          }
         }
       },
-
       "TaskAccepted": {
         "type": "object",
         "properties": {
-          "taskId": { "type": "string" },
-          "estimatedSeconds": { "type": "integer" }
+          "taskId": {
+            "type": "string"
+          },
+          "estimatedSeconds": {
+            "type": "integer"
+          }
         }
       },
-
       "Thread": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string" },
-          "messageCount": { "type": "integer" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "messageCount": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
-
       "Message": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "threadId": { "type": "string" },
-          "role": { "type": "string", "enum": ["user", "assistant", "system", "tool"] },
-          "content": { "type": "string" },
-          "model": { "type": "string", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant",
+              "system",
+              "tool"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
-
       "ChatRequest": {
         "type": "object",
-        "required": ["content"],
+        "required": [
+          "content"
+        ],
         "properties": {
-          "content": { "type": "string", "example": "帮我看看第 41 章和第 28 章有没有矛盾" },
+          "content": {
+            "type": "string",
+            "example": "帮我看看第 41 章和第 28 章有没有矛盾"
+          },
           "context": {
             "type": "object",
             "description": "当前打开的章节，可选",
-            "properties": { "chapterId": { "type": "string" } }
-          }
-        }
-      },
-
-      "Proposal": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "taskId": { "type": "string" },
-          "kind": { "type": "string", "enum": ["review", "entity_update", "text_edit", "new_file"] },
-          "title": { "type": "string" },
-          "payload": { "type": "object", "additionalProperties": true },
-          "evidence": { "type": "array", "items": { "type": "string" }, "description": "章节 id，前端渲染成可点击链接" },
-          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-          "createdAt": { "type": "string", "format": "date-time" }
-        }
-      },
-
-      "ModelConfig": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "provider": { "type": "string", "enum": ["openai-compat", "anthropic", "ollama"] },
-          "label": { "type": "string", "example": "DeepSeek" },
-          "baseUrl": { "type": "string" },
-          "apiKey": { "type": "string", "description": "读取时只返回后 4 位，如 sk-****cdef；提交时传完整值，传 null 表示不修改" },
-          "models": { "type": "array", "items": { "type": "string" } },
-          "isDefault": { "type": "boolean" }
-        }
-      },
-
-      "ModelInfo": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "displayName": { "type": "string" },
-          "contextWindow": { "type": "integer" }
-        }
-      },
-
-      "ModelTestRequest": {
-        "type": "object",
-        "required": ["provider", "baseUrl", "apiKey", "model"],
-        "properties": {
-          "provider": { "type": "string", "enum": ["openai-compat", "anthropic", "ollama"] },
-          "baseUrl": { "type": "string" },
-          "apiKey": { "type": "string" },
-          "model": { "type": "string" }
-        }
-      },
-
-      "Settings": {
-        "type": "object",
-        "properties": {
-          "models": { "type": "array", "items": { "$ref": "#/components/schemas/ModelConfig" } },
-          "profile": { "type": "string", "enum": ["budget", "balanced", "quality"], "default": "balanced" },
-          "routes": {
-            "type": "object",
-            "description": "任务类型 → 模型名的映射",
-            "additionalProperties": { "type": "string" },
-            "example": { "PROOFREAD": "deepseek-chat", "CONSISTENCY": "deepseek-reasoner" }
-          },
-          "proofread": {
-            "type": "object",
             "properties": {
-              "onSave": { "type": "boolean", "default": true },
-              "ruleEngine": { "type": "boolean", "default": true },
-              "llm": { "type": "boolean", "default": false }
-            }
-          },
-          "autoSnapshot": {
-            "type": "object",
-            "properties": {
-              "enabled": { "type": "boolean", "default": true },
-              "intervalMinutes": { "type": "integer", "default": 10 },
-              "keep": { "type": "integer", "default": 50 }
-            }
-          },
-          "quota": {
-            "type": "object",
-            "properties": { "dailyTokenLimit": { "type": "integer", "default": 2000000 } }
-          },
-          "python": {
-            "type": "object",
-            "properties": {
-              "enabled": { "type": "boolean", "default": false },
-              "baseUrl": { "type": "string", "default": "http://127.0.0.1:8000" }
-            }
-          },
-          "ui": {
-            "type": "object",
-            "properties": {
-              "fontSize": { "type": "integer", "default": 16 },
-              "lineHeight": { "type": "number", "default": 1.8 },
-              "theme": { "type": "string", "enum": ["light", "dark", "sepia", "auto"], "default": "light" }
-            }
-          }
-        }
-      },
-
-      "WritingStats": {
-        "type": "object",
-        "properties": {
-          "totalWords": { "type": "integer" },
-          "todayWords": { "type": "integer" },
-          "avgDailyWords": { "type": "integer" },
-          "streakDays": { "type": "integer" },
-          "series": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "date": { "type": "string", "format": "date" },
-                "words": { "type": "integer" },
-                "durationMinutes": { "type": "integer" },
-                "chaptersTouched": { "type": "array", "items": { "type": "string" } }
+              "chapterId": {
+                "type": "string"
               }
             }
           }
         }
       },
-
+      "Proposal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "review",
+              "entity_update",
+              "text_edit",
+              "new_file"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "章节 id，前端渲染成可点击链接"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ModelConfig": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai-compat",
+              "anthropic",
+              "ollama"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "example": "DeepSeek"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "apiKey": {
+            "type": "string",
+            "description": "读取时只返回后 4 位，如 sk-****cdef；提交时传完整值，传 null 表示不修改"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isDefault": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ModelInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "contextWindow": {
+            "type": "integer"
+          }
+        }
+      },
+      "ModelTestRequest": {
+        "type": "object",
+        "required": [
+          "provider",
+          "baseUrl",
+          "apiKey",
+          "model"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai-compat",
+              "anthropic",
+              "ollama"
+            ]
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "apiKey": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelConfig"
+            }
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "budget",
+              "balanced",
+              "quality"
+            ],
+            "default": "balanced"
+          },
+          "routes": {
+            "type": "object",
+            "description": "任务类型 → 模型名的映射",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "PROOFREAD": "deepseek-chat",
+              "CONSISTENCY": "deepseek-reasoner"
+            }
+          },
+          "proofread": {
+            "type": "object",
+            "properties": {
+              "onSave": {
+                "type": "boolean",
+                "default": true
+              },
+              "ruleEngine": {
+                "type": "boolean",
+                "default": true
+              },
+              "llm": {
+                "type": "boolean",
+                "default": false
+              }
+            }
+          },
+          "autoSnapshot": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "intervalMinutes": {
+                "type": "integer",
+                "default": 10
+              },
+              "keep": {
+                "type": "integer",
+                "default": 50
+              }
+            }
+          },
+          "quota": {
+            "type": "object",
+            "properties": {
+              "dailyTokenLimit": {
+                "type": "integer",
+                "default": 2000000
+              }
+            }
+          },
+          "python": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": false
+              },
+              "baseUrl": {
+                "type": "string",
+                "default": "http://127.0.0.1:8000"
+              }
+            }
+          },
+          "ui": {
+            "type": "object",
+            "properties": {
+              "fontSize": {
+                "type": "integer",
+                "default": 16
+              },
+              "lineHeight": {
+                "type": "number",
+                "default": 1.8
+              },
+              "theme": {
+                "type": "string",
+                "enum": [
+                  "light",
+                  "dark",
+                  "sepia",
+                  "auto"
+                ],
+                "default": "light"
+              }
+            }
+          }
+        }
+      },
+      "WritingStats": {
+        "type": "object",
+        "properties": {
+          "totalWords": {
+            "type": "integer"
+          },
+          "todayWords": {
+            "type": "integer"
+          },
+          "avgDailyWords": {
+            "type": "integer"
+          },
+          "streakDays": {
+            "type": "integer"
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "words": {
+                  "type": "integer"
+                },
+                "durationMinutes": {
+                  "type": "integer"
+                },
+                "chaptersTouched": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "ProgressStats": {
         "type": "object",
         "properties": {
           "byStatus": {
             "type": "object",
             "properties": {
-              "draft": { "type": "integer" },
-              "revising": { "type": "integer" },
-              "done": { "type": "integer" }
+              "draft": {
+                "type": "integer"
+              },
+              "revising": {
+                "type": "integer"
+              },
+              "done": {
+                "type": "integer"
+              }
             }
           },
           "byVolume": {
@@ -1660,54 +3744,110 @@
             "items": {
               "type": "object",
               "properties": {
-                "volume": { "type": "string" },
-                "chapters": { "type": "integer" },
-                "words": { "type": "integer" },
-                "status": { "type": "string" }
+                "volume": {
+                  "type": "string"
+                },
+                "chapters": {
+                  "type": "integer"
+                },
+                "words": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string"
+                }
               }
             }
           },
           "hookStats": {
             "type": "object",
             "properties": {
-              "open": { "type": "integer" },
-              "resolved": { "type": "integer" },
-              "abandoned": { "type": "integer" }
+              "open": {
+                "type": "integer"
+              },
+              "resolved": {
+                "type": "integer"
+              },
+              "abandoned": {
+                "type": "integer"
+              }
             }
           },
           "reviewStats": {
             "type": "object",
             "properties": {
-              "pending": { "type": "integer" },
-              "accepted": { "type": "integer" },
-              "rejected": { "type": "integer" },
-              "orphaned": { "type": "integer" }
+              "pending": {
+                "type": "integer"
+              },
+              "accepted": {
+                "type": "integer"
+              },
+              "rejected": {
+                "type": "integer"
+              },
+              "orphaned": {
+                "type": "integer"
+              }
             }
           }
         }
       },
-
       "ExportRequest": {
         "type": "object",
-        "required": ["bookId", "format"],
+        "required": [
+          "bookId",
+          "format"
+        ],
         "properties": {
-          "bookId": { "type": "string" },
-          "format": { "type": "string", "enum": ["txt", "md", "docx", "epub"] },
+          "bookId": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "txt",
+              "md",
+              "docx",
+              "epub"
+            ]
+          },
           "scope": {
             "type": "object",
             "properties": {
-              "type": { "type": "string", "enum": ["all", "volume", "range"] },
-              "volume": { "type": "string" },
-              "fromId": { "type": "string" },
-              "toId": { "type": "string" }
+              "type": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "volume",
+                  "range"
+                ]
+              },
+              "volume": {
+                "type": "string"
+              },
+              "fromId": {
+                "type": "string"
+              },
+              "toId": {
+                "type": "string"
+              }
             }
           },
           "options": {
             "type": "object",
             "properties": {
-              "includeTitle": { "type": "boolean", "default": true },
-              "chapterSeparator": { "type": "string", "default": "\n\n" },
-              "tocDepth": { "type": "integer", "default": 2 }
+              "includeTitle": {
+                "type": "boolean",
+                "default": true
+              },
+              "chapterSeparator": {
+                "type": "string",
+                "default": "\n\n"
+              },
+              "tocDepth": {
+                "type": "integer",
+                "default": 2
+              }
             }
           }
         }
