@@ -63,29 +63,52 @@ wsl --install
 ```yaml
 services:
   mysql:
+    # 用哪个镜像。8.0 是当前长期支持版本
     image: mysql:8.0
+    # 容器名。不指定的话 Docker 会随机生成一个，容器多了分不清谁是谁
     container_name: yimo-mysql
+    # 开机自启（除非手动停过）。电脑重启后不用记得手动起数据库
     restart: unless-stopped
+
     environment:
-      MYSQL_ROOT_PASSWORD: root_dev_2026
-      MYSQL_DATABASE: yimo
-      MYSQL_USER: yimo
+      # 这五个是 MySQL 镜像约定的环境变量，容器第一次启动时会用它初始化
+      MYSQL_ROOT_PASSWORD: root_dev_2026    # 管理员密码，只用来管理，应用不用它
+      MYSQL_DATABASE: yimo                  # 自动建好这个库，不用手动 CREATE DATABASE
+      MYSQL_USER: yimo                      # 应用连接用的账号
       MYSQL_PASSWORD: yimo_dev_2026
-      TZ: Asia/Shanghai
+      TZ: Asia/Shanghai                     # 时区。不设的话容器用 UTC，写入的时间差 8 小时
+
     command:
+      # 传给 MySQL 服务的启动参数。
+      # 字符集必须显式指定 utf8mb4——MySQL 的「utf8」是阉割版，
+      # 存不了 emoji 和部分生僻字，而小说里出现生僻字是常事
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
-    ports:
-      - "127.0.0.1:3308:3306"
-    volumes:
-      - mysql-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_dev_2026"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 30s
 
+    ports:
+      # 端口映射，格式是「宿主机端口:容器端口」。
+      # 3306 被本机的 MySQL 服务占了，所以外面用 3308。
+      # 前面写 127.0.0.1 是关键——只监听本机，
+      # 同一个 Wi-Fi 下别人扫不到你的数据库
+      - "127.0.0.1:3308:3306"
+
+    volumes:
+      # 数据存哪。不挂这个卷的话，容器一删数据全没
+      - mysql-data:/var/lib/mysql
+
+    healthcheck:
+      # 健康检查：每隔 5 秒执行一次 mysqladmin ping。
+      # 有它才能用 docker compose ps 看出数据库是不是「真的可以连了」，
+      # 而不是只看容器有没有在运行
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_dev_2026"]
+      interval: 5s          # 每 5 秒查一次
+      timeout: 3s           # 单次超时 3 秒
+      retries: 12           # 连续失败 12 次才判定为不健康
+      start_period: 30s     # 启动后给 30 秒宽限期，这段时间内失败不算数
+                            # （MySQL 第一次启动要初始化数据目录，比较慢）
+
+# 声明上面用到的命名卷。Docker 会把它存在自己的数据目录里，
+# 容器删了重建，数据还在
 volumes:
   mysql-data:
 ```
@@ -608,15 +631,25 @@ org.springframework.boot:spring-boot-starter-parent:pom:4.1.1.RELEASE
 在 Git Bash 里执行，写一份 Maven 配置：
 
 ```bash
+# mkdir -p：建目录。-p 的意思是「不存在就建，已存在也不报错」
+# ~ 在 Git Bash 里代表当前用户的主目录，即 C:\Users\你的用户名
+# .m2 是 Maven 约定的配置目录，它会自动去这里找 settings.xml
 mkdir -p ~/.m2
+
+# 从 << 'EOF' 到 EOF 之间的内容，原样写进 ~/.m2/settings.xml
+# 给 EOF 加单引号是必须的——不加的话 shell 会去解析内容里的 $ 符号，
+# 把 XML 里的变量当环境变量替换掉
 cat > ~/.m2/settings.xml << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
   <mirrors>
     <mirror>
+      <!-- 给这个镜像起个名字，随便写，出错时日志里能看到 -->
       <id>aliyun</id>
+      <!-- 替换哪个仓库。central 是 Maven 中央仓库，所有公开依赖都从它下载 -->
       <mirrorOf>central</mirrorOf>
       <name>Aliyun Maven</name>
+      <!-- 阿里云的镜像地址，内容和中央仓库一致，但从国内访问快得多 -->
       <url>https://maven.aliyun.com/repository/public</url>
     </mirror>
   </mirrors>
@@ -639,21 +672,33 @@ Initializr 给的是基础依赖，MyBatis-Plus、HanLP、Hutool 要手动加。
 打开 `backend/pom.xml`，在 `<dependencies>` 里加：
 
 ```xml
-<!-- MyBatis-Plus：数据库访问 -->
+<!--
+  Maven 坐标由三部分组成：
+    groupId     组织名，相当于 Java 包名的倒写
+    artifactId  项目名
+    version     版本号
+  三者合起来唯一确定一个依赖。
+-->
+
+<!-- 数据库访问。省掉写 SQL 的样板代码 -->
 <dependency>
     <groupId>com.baomidou</groupId>
+    <!-- 注意是 spring-boot4-starter 不是 spring-boot3-starter。
+         Spring Boot 4 换了坐标，用错了会启动失败 -->
     <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
     <version>3.5.17</version>
 </dependency>
 
-<!-- 中文分词与 NLP -->
+<!-- 中文分词与自然语言处理。规则引擎里判断「他/她混用」要用到分词 -->
 <dependency>
     <groupId>com.hankcs</groupId>
     <artifactId>hanlp</artifactId>
+    <!-- portable 版自带数据包，约 30MB，不用另外下载模型 -->
     <version>portable-1.8.6</version>
 </dependency>
 
-<!-- 工具集：文件、字符串、ID 生成 -->
+<!-- 工具集：文件操作、字符串处理、哈希计算等。
+     有了它就不用自己写一堆 StringUtils、FileUtils -->
 <dependency>
     <groupId>cn.hutool</groupId>
     <artifactId>hutool-all</artifactId>
@@ -724,29 +769,51 @@ com.yimo
 把 `src/main/resources/application.properties` 删掉，新建 `application.yml`：
 
 ```yaml
+# ===== Web 服务器 =====
 server:
-  address: 127.0.0.1          # 只监听本机，不暴露到局域网
+  # 只监听本机。亿墨没有账号体系，绑到 0.0.0.0 的话，
+  # 同一个 Wi-Fi 下任何人都能读写你的稿件。这条不是可选项
+  address: 127.0.0.1
+  # 用 18080 而不是 8080：本机 8080 已经被别的服务占了。
+  # 端口只在启动时用一次（随后自动打开浏览器），所以不用好记
   port: 18080
 
 spring:
   application:
     name: yimo
+
+  # ===== 数据库连接 =====
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
+
+    # JDBC URL 里每个参数都有原因，详见下面的表格：
+    #   3308           docker-compose.yml 里映射出来的端口
+    #   UTF-8          中文不乱码（不能写 utf8mb4，驱动不认）
+    #   Asia/Shanghai  时区，不加 datetime 字段会差 8 小时
+    #   allowPublicKeyRetrieval  MySQL 8 的认证方式需要
+    #   useSSL=false   本地连接不需要加密，开着反而慢
     url: jdbc:mysql://127.0.0.1:3308/yimo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
     username: yimo
     password: yimo_dev_2026
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
 
+    # 连接池。数据库连接是稀缺资源，池子负责复用
+    hikari:
+      maximum-pool-size: 10    # 最多同时 10 个连接
+      minimum-idle: 2          # 至少保持 2 个空闲连接，来了请求不用现建
+
+# ===== MyBatis-Plus =====
 mybatis-plus:
   configuration:
-    map-underscore-to-camel-case: true     # user_name → userName
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl   # 开发时打印 SQL
+    # 数据库字段是下划线风格（last_opened），Java 字段是驼峰（lastOpened）。
+    # 打开这个开关，框架自动帮你转换，不用在每个字段上写 @TableField
+    map-underscore-to-camel-case: true
+    # 把执行的 SQL 打印到控制台。排查数据问题最快的方法，生产环境要去掉
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
+# ===== 日志 =====
 logging:
   level:
+    # 自己写的包用 DEBUG 级别，方便看细节
     com.yimo: DEBUG
 ```
 
@@ -767,27 +834,50 @@ logging:
 ```java
 package com.yimo.controller;
 
+import com.yimo.common.Ids;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
-@RestController
-@RequestMapping("/api/ping")
+/**
+ * 健康检查接口。
+ *
+ * <p>用途是验证「服务起没起来」和「客户端能不能连上」，
+ * 不涉及任何业务逻辑，所以它也是最小、最好写的一个接口。
+ */
+@RestController                    // 这个类是处理 HTTP 请求的，返回值自动转 JSON
+@RequestMapping("/api/ping")       // 类里所有接口的 URL 都以这个开头
 public class PingController {
 
+    /**
+     * GET /api/ping
+     *
+     * <p>返回 Map 而不是定义 DTO，是因为这里只有三个字段、
+     * 只在开发期用，定义一个类反而啰嗦。
+     */
     @GetMapping
     public Map<String, Object> ping() {
-        return Map.of(
-            "ok", true,
-            "service", "yimo",
-            "time", OffsetDateTime.now().toString()
-        );
+        // 用 LinkedHashMap 而不是 Map.of()：
+        // Map.of 的遍历顺序是不保证的，返回的 JSON 字段顺序每次都可能不同，
+        // 调试时看着别扭。LinkedHashMap 保持插入顺序
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ok", true);
+        result.put("service", "yimo");
+        // 带时区的时间。用 LocalDateTime 的话前端不知道这是哪个时区的时间
+        result.put("time", OffsetDateTime.now().toString());
+        // 顺便生成一个 ULID 返回，用来验证 ID 生成器工作正常
+        result.put("sampleId", Ids.chapter());
+        return result;
     }
 }
 ```
+
+**`@RestController` 和 `@Controller` 的区别**：前者相当于 `@Controller` + `@ResponseBody`，方法返回值会被转成 JSON 直接写进响应体。用 `@Controller` 的话，返回值会被当成「视图名」去找 HTML 模板——那是服务端渲染的用法，我们的前后端分离项目用不上。
 
 ## 1.6 启动并验证
 
@@ -871,16 +961,36 @@ docker compose exec mysql mysql -uyimo -pyimo_dev_2026 yimo
 先只建最小的一张表，验证链路通。
 
 ```sql
+-- 切到 yimo 库。后面的操作都在这个库里进行
 USE yimo;
 
 CREATE TABLE library (
-  id           CHAR(26)     NOT NULL PRIMARY KEY COMMENT 'ULID',
+  -- CHAR(26) 而不是 VARCHAR(26)：定长类型在 MySQL 里存得更紧凑，
+  -- 而且能提前挡住「不小心存了长度不对的 id」这种事。
+  -- 26 是 ULID 本身的长度，不含 lib_ 前缀
+  id           CHAR(26)     NOT NULL PRIMARY KEY COMMENT 'ULID，不含前缀',
+
+  -- VARCHAR(100) 对书库名足够。这里必须给长度，MySQL 不允许 VARCHAR 不写长度
   name         VARCHAR(100) NOT NULL,
+
+  -- VARCHAR(500)：Windows 的路径上限是 260 字符，
+  -- 留到 500 是为了兼容更长的路径和以后可能的调整
   path         VARCHAR(500) NOT NULL,
+
+  -- 允许为空：新添加的书库还没被打开过。
+  -- 列表按这个字段倒序排，NULL 会排在最后
   last_opened  DATETIME     NULL,
+
+  -- 不填时自动写入当前时间，不用应用层管
   created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  -- 唯一索引：同一个路径不能添加两次。
+  -- 有了它，即使应用层的查重逻辑被绕过（比如并发请求），
+  -- 数据库这一层也会兜住
   UNIQUE KEY uk_path (path)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB                       -- InnoDB 支持事务和行级锁，是 MySQL 8 的默认引擎
+  DEFAULT CHARSET=utf8mb4             -- 字符集必须是 utf8mb4，见前面的说明
+  COLLATE=utf8mb4_0900_ai_ci;         -- 排序规则：不区分大小写和重音
 ```
 
 **验证**：
@@ -915,11 +1025,21 @@ Lombok 只在**编译期**工作（生成代码），运行期完全用不到。
 同一个 pom 的 `<build>` 里：
 
 ```xml
+<!-- 这是 Spring Boot 官方的打包插件，负责把项目打成可执行的 fat jar -->
 <plugin>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-maven-plugin</artifactId>
+
     <configuration>
+        <!-- 打包时排除下列依赖 -->
         <excludes>
+            <!--
+              Lombok 只在编译期工作（帮你生成 getter/setter 的字节码），
+              运行期完全不需要它。
+
+              不排除的话，打出的 jar 里会多一个几百 KB 的 lombok.jar，
+              而且可能和其他版本的 Lombok 冲突。
+            -->
             <exclude>
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
@@ -997,8 +1117,29 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.yimo.domain.Library;
 import org.apache.ibatis.annotations.Mapper;
 
-@Mapper
+/**
+ * 书库的数据访问接口。
+ *
+ * <p>注意这是个 interface 而不是 class——你不需要写实现。
+ * MyBatis 运行时会用动态代理生成一个实现类，
+ * 里面每个方法的 SQL 都由 BaseMapper 定义。
+ */
+@Mapper     // 告诉 MyBatis「这个接口要生成实现」，不加的话注入时会找不到
 public interface LibraryMapper extends BaseMapper<Library> {
+    // 这里什么都不用写。
+    //
+    // 继承 BaseMapper<Library> 之后自动拥有：
+    //   insert(entity)          插入
+    //   deleteById(id)          按主键删除
+    //   updateById(entity)      按主键更新
+    //   selectById(id)          按主键查询
+    //   selectList(wrapper)     条件查询，wrapper 传 null 表示查全部
+    //   selectCount(wrapper)    条件计数
+    //   insertOrUpdate(entity)  有主键就更新，没有就插入
+    //   ...还有十几个
+    //
+    // 需要复杂查询时，在接口里加方法并配 @Select 注解或 XML，
+    // 但我们的场景用不到——绝大多数操作 BaseMapper 都覆盖了
 }
 ```
 
@@ -1007,14 +1148,34 @@ public interface LibraryMapper extends BaseMapper<Library> {
 记得在启动类上加 `@MapperScan`：
 
 ```java
+package com.yimo;
+
+import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * 应用入口。
+ */
 @SpringBootApplication
+// 扫描 com.yimo.mapper 包下所有带 @Mapper 的接口并为它们生成实现。
+// 不写这个的话，每个 Mapper 接口都要单独加 @Mapper 注解——
+// 项目大了容易漏，不如统一在这里声明一次
 @MapperScan("com.yimo.mapper")
 public class YimoApplication {
+
     public static void main(String[] args) {
+        // run() 内部做了三件事：
+        //   1. 创建 Spring 容器
+        //   2. 扫描当前包及子包，把所有 @Component / @Service / @RestController
+        //      标记的类实例化并装配好依赖
+        //   3. 启动内嵌的 Tomcat，开始监听端口
         SpringApplication.run(YimoApplication.class, args);
     }
 }
 ```
+
+**这个类后面还会改。** 做到「文件夹选择窗口」那一步时，要在 `run()` 之前加一行 `app.setHeadless(false)`，否则弹不出系统对话框。现在先不用管。
 
 ## 2.4 测试接口
 
@@ -1031,16 +1192,41 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+/**
+ * 书库接口。
+ *
+ * <p>这一版先做成最简单的形式：Controller 直接调 Mapper，
+ * 不经过 Service。等业务规则变多了（校验、查重、报错），
+ * 再在迭代 1 里把它拆成三层。
+ */
 @RestController
 @RequestMapping("/api/libraries")
 public class LibraryController {
 
+    // final 表示「构造完就不能改」。
+    // Spring 创建这个对象时，会从容器里找 LibraryMapper 的实现塞进来
     private final LibraryMapper libraryMapper;
 
+    /**
+     * 构造函数。
+     *
+     * <p>Spring 见到「只有一个构造函数」的类，会自动用它来注入依赖，
+     * 不需要加 @Autowired 注解。
+     *
+     * <p>也可以用「字段注入」——在字段上加 @Autowired 让 Spring 直接赋值。
+     * 但那种写法有两个坏处：字段不能是 final（可能被意外改动），
+     * 以及缺依赖时要等运行到那一行才报错，而不是启动就报错。
+     */
     public LibraryController(LibraryMapper libraryMapper) {
         this.libraryMapper = libraryMapper;
     }
 
+    /**
+     * GET /api/libraries
+     *
+     * <p>selectList(null) 里的 null 表示「没有查询条件」，即查全部。
+     * 需要条件时传一个 QueryWrapper。
+     */
     @GetMapping
     public List<Library> list() {
         return libraryMapper.selectList(null);
@@ -1249,7 +1435,12 @@ import axios from 'axios'
  * 生产时前后端同源。不要在这里写死完整域名。
  */
 export const http = axios.create({
+  // 所有请求的公共前缀。写相对路径 '/api' 而不是完整域名，
+  // 是因为开发时 Vite 会代理到后端、生产时前后端同源——
+  // 两种情况都不需要改代码
   baseURL: '/api',
+  // 30 秒超时。请求超过这个时间自动失败，避免界面一直转圈。
+  // 注意后面有个接口要单独改这个值（文件夹选择窗口，见 3.5 节）
   timeout: 30000,
 })
 
@@ -1388,15 +1579,28 @@ src/
 
 ```html
 <!DOCTYPE html>
+<!-- lang="zh-CN" 告诉浏览器这是中文页面，
+     影响字体选择和自动断行规则。写 "en" 的话中文的断行会按英文规则处理 -->
 <html lang="zh-CN">
   <head>
+    <!-- 声明文件编码。必须是 head 里的第一行，
+         放在后面浏览器可能已经用错编码解析过前面的内容了 -->
     <meta charset="UTF-8">
+
     <link rel="icon" href="/favicon.ico">
+
+    <!-- 移动端适配。width=device-width 让页面宽度等于设备宽度，
+         不加的话手机浏览器会按 980px 渲染再缩小，字小得看不清 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>亿墨 YI-MO</title>
   </head>
   <body>
+    <!-- Vue 应用挂载到这里。main.ts 里的 app.mount('#app') 就是找这个 id -->
     <div id="app"></div>
+
+    <!-- type="module" 让浏览器按 ES 模块方式加载。
+         Vite 开发时会把 /src/main.ts 转译成浏览器能懂的代码 -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
@@ -1424,19 +1628,25 @@ import { RouterView } from 'vue-router'
 
 ```ts
 import { createRouter, createWebHistory } from 'vue-router'
+// 首页直接 import：它是首屏就要显示的，没必要延迟加载
 import HomeView from '@/views/HomeView.vue'
 
 const router = createRouter({
+  // history 模式：URL 长这样 /libraries，不带 # 号。
+  // 另一种写法 createWebHashHistory() 会得到 /#/libraries，
+  // 兼容性好但难看。前后端同源的项目用 history 模式更自然
   history: createWebHistory(import.meta.env.BASE_URL),
+
   routes: [
     {
-      path: '/',
-      name: 'home',
-      component: HomeView,
+      path: '/',              // URL 路径
+      name: 'home',           // 路由名，代码里可写 router.push({ name: 'home' })
+      component: HomeView,    // 对应哪个组件
     },
   ],
 })
 
+// 导出给 main.ts 用（app.use(router)）
 export default router
 ```
 
@@ -1446,17 +1656,31 @@ export default router
 
 ```vue
 <script setup lang="ts">
+// lang="ts" 表示这个组件用 TypeScript 写。
+// 不加的话是普通 JavaScript，类型检查就没了
 import { ref, onMounted } from 'vue'
 import { pingApi, type PingResult } from '@/api/ping'
 import { toApiError, type ApiError } from '@/api/http'
 
-const ping = ref<PingResult | null>(null)
-const error = ref<ApiError | null>(null)
-const loading = ref(true)
+/*
+ * ref 是 Vue 的响应式容器。
+ *
+ * 它的作用是：当 .value 被改变时，模板里用到它的地方会自动重新渲染。
+ * 如果直接用普通变量 `let ping = null`，改了值页面不会更新——
+ * 因为 JavaScript 不知道你改了它。
+ *
+ * 注意在 <script> 里访问要写 .value，在 <template> 里不用写（Vue 自动拆包）：
+ *   script:  ping.value = xxx
+ *   template: {{ ping }}
+ */
+const ping = ref<PingResult | null>(null)   // 接口返回的数据
+const error = ref<ApiError | null>(null)    // 出错信息
+const loading = ref(true)                   // 是否正在加载
 
 async function check() {
   loading.value = true
-  error.value = null
+  error.value = null      // 重试前先清掉上次的错误
+
   try {
     ping.value = await pingApi.ping()
   } catch (e) {
@@ -1465,10 +1689,16 @@ async function check() {
     // 统一用 toApiError 做类型收窄
     error.value = toApiError(e)
   } finally {
+    // finally 里的代码无论成功失败都会执行。
+    // 放在这里保证「加载中」的状态一定会被关掉，
+    // 不会因为异常导致界面永远转圈
     loading.value = false
   }
 }
 
+// onMounted 是生命周期钩子：组件挂载到页面上之后执行。
+// 数据请求放在这里，不用写在 setup 的顶层——
+// 那样会在组件还没渲染时就发请求
 onMounted(check)
 </script>
 
@@ -1480,12 +1710,21 @@ onMounted(check)
         本地优先、零注册、Agent 增强的小说创作工作台
       </p>
 
+      <!--
+        v-if / v-else-if 是条件渲染：条件为真才渲染这个元素。
+        三个分支互斥，同一时刻只会显示一个。
+
+        不要用 v-show 替代——v-show 是「渲染出来但用 CSS 隐藏」，
+        对这里没差别，但 v-if 语义更准确。
+      -->
+
       <!-- 加载中 -->
       <div v-if="loading" class="text-sm text-neutral-500">正在连接后端…</div>
 
       <!-- 连接失败 -->
       <div v-else-if="error" class="rounded-lg border border-red-200 bg-red-50 p-4">
         <p class="text-sm font-medium text-red-800">后端连接失败</p>
+        <!-- {{ }} 是插值语法，把表达式的值显示出来。会自动做 HTML 转义，防 XSS -->
         <p class="text-xs text-red-600 font-mono mt-1">{{ error.error }}</p>
         <p class="text-xs text-red-600 mt-1">{{ error.message }}</p>
         <p class="text-xs text-red-500 mt-3 leading-relaxed">
@@ -1556,32 +1795,54 @@ package com.yimo.common;
 
 import org.springframework.http.HttpStatus;
 
+/**
+ * 所有业务错误码。
+ *
+ * <p>为什么把「错误码」和「HTTP 状态码」绑在一起：
+ * 前端拿到 404 只知道「资源不存在」，但不知道是哪个资源。
+ * 带上错误码 LIBRARY_NOT_FOUND，前端就能针对性地处理——
+ * 比如书库不存在时跳回列表页，章节不存在时只提示一下。
+ *
+ * <p>为什么用 enum 而不是一堆常量字符串：
+ * 编译器会检查拼写。写错 LIBRARY_NOT_FOUN 会直接编译不过，
+ * 而字符串常量 "LIBRARY_NOT_FOUN" 会静静地跑到线上。
+ */
 public enum ErrorCode {
+
+    // ===== 书库 =====
+    // 格式：错误码(HTTP状态码, 给用户看的中文说明)
     LIBRARY_NOT_FOUND(HttpStatus.NOT_FOUND, "书库不存在"),
     LIBRARY_PATH_INVALID(HttpStatus.BAD_REQUEST, "书库路径无效或不可读"),
     LIBRARY_PATH_DUPLICATE(HttpStatus.CONFLICT, "该路径已添加过"),
 
+    // ===== 章节 =====
     CHAPTER_NOT_FOUND(HttpStatus.NOT_FOUND, "章节不存在"),
     CHAPTER_TITLE_DUPLICATE(HttpStatus.CONFLICT, "同目录下已有同名章节"),
 
+    // ===== 文件 =====
     PATH_OUT_OF_BOUNDS(HttpStatus.FORBIDDEN, "路径越界"),
     FILE_READ_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "文件读取失败"),
     FILE_WRITE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "文件写入失败"),
     CONTENT_HASH_MISMATCH(HttpStatus.CONFLICT, "文件已被外部修改"),
 
+    // ===== AI =====
     MODEL_NOT_CONFIGURED(HttpStatus.BAD_REQUEST, "尚未配置模型"),
     AI_CALL_FAILED(HttpStatus.BAD_GATEWAY, "模型调用失败"),
     AI_QUOTA_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "已达每日用量上限"),
     ;
 
+    // enum 的字段也是 final 的，在构造时赋值
     private final HttpStatus status;
     private final String message;
 
+    // enum 的构造函数只能是 private（写不写 private 都一样），
+    // 因为枚举值在编译期就固定了，不允许运行时 new 新的出来
     ErrorCode(HttpStatus status, String message) {
         this.status = status;
         this.message = message;
     }
 
+    // 只提供读取方法，不提供 setter——枚举值本身就应该不可变
     public HttpStatus status() { return status; }
     public String message() { return message; }
 }
@@ -1594,21 +1855,43 @@ package com.yimo.common;
 
 import java.util.Map;
 
+/**
+ * 业务异常。
+ *
+ * <p>业务代码里遇到「不该继续走下去」的情况时抛这个，
+ * 由 GlobalExceptionHandler 统一翻译成 HTTP 响应。
+ *
+ * <p>为什么继承 RuntimeException 而不是 Exception：
+ * 受检异常（Exception）会逼着每个调用方写 try-catch 或往上抛，
+ * 代码里到处都是 `throws`。而业务异常本来就该由全局处理器统一处理，
+ * 让它一路往上冒就行。
+ */
 public class BizException extends RuntimeException {
 
     private final ErrorCode code;
+
+    /** 补充信息，比如「是哪个路径出的问题」。可以是空的 */
     private final Map<String, Object> details;
 
+    /** 最简用法：只需一个错误码，消息用错误码自带的 */
     public BizException(ErrorCode code) {
         this(code, code.message(), Map.of());
     }
 
+    /** 需要更具体的说明时用这个，比如把出错的路径拼进消息里 */
     public BizException(ErrorCode code, String message) {
         this(code, message, Map.of());
     }
 
+    /**
+     * 完整用法。
+     *
+     * @param code    错误码，决定 HTTP 状态码
+     * @param message 给用户看的说明
+     * @param details 结构化补充信息，会原样返回给前端
+     */
     public BizException(ErrorCode code, String message, Map<String, Object> details) {
-        super(message);
+        super(message);     // 传给父类，这样 e.getMessage() 能拿到
         this.code = code;
         this.details = details;
     }
@@ -1630,37 +1913,79 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * 全局异常处理。
+ *
+ * <p>作用：把代码里抛出的异常统一翻译成 HTTP 响应，
+ * 而不是让 Spring 默认的错误页（一大坨 HTML）返回给前端。
+ *
+ * <p>统一后的格式见 docs/06-api.md：
+ * { "error": "错误码", "message": "说明", "details": {}, "timestamp": "..." }
+ */
 @RestControllerAdvice
+// @RestControllerAdvice = @ControllerAdvice + @ResponseBody。
+// 前者让这个类的方法作用于所有 Controller，
+// 后者让返回值直接转成 JSON
 public class GlobalExceptionHandler {
 
+    // 日志对象。用 SLF4J 的接口而不是直接依赖 Logback，
+    // 这样以后换日志实现不用改代码
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    /**
+     * 处理我们自己的业务异常。
+     *
+     * <p>用 warn 级别而不是 error——业务异常是「预期内的失败」
+     * （比如用户填了个不存在的路径），不是系统故障。
+     * 用 error 的话日志里会混进一堆噪音，真正的故障反而被淹没。
+     */
     @ExceptionHandler(BizException.class)
     public ResponseEntity<Map<String, Object>> handleBiz(BizException e) {
         log.warn("业务异常: {} - {}", e.code().name(), e.getMessage());
-        return ResponseEntity.status(e.code().status()).body(body(
-            e.code().name(), e.getMessage(), e.details()));
+
+        return ResponseEntity
+                .status(e.code().status())      // HTTP 状态码由错误码决定
+                .body(body(e.code().name(), e.getMessage(), e.details()));
     }
 
+    /**
+     * 兜底：所有上面没接住的异常都到这里。
+     *
+     * <p>这里必须用 error 级别并打印完整堆栈——
+     * 走到这里说明有代码没考虑到的 bug，堆栈是唯一的线索。
+     *
+     * <p>返回给前端的只有一句「服务内部错误」，
+     * 具体的异常信息不外泄（可能包含文件路径、SQL 等敏感内容）。
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleOther(Exception e) {
         log.error("未预期异常", e);
-        return ResponseEntity.status(500).body(body(
-            "INTERNAL_ERROR", "服务内部错误", Map.of()));
+
+        return ResponseEntity
+                .status(ErrorCode.INTERNAL_ERROR.status())
+                .body(body(ErrorCode.INTERNAL_ERROR.name(),
+                           ErrorCode.INTERNAL_ERROR.message(),
+                           Map.of()));
     }
 
+    /** 组装统一格式的响应体 */
     private Map<String, Object> body(String error, String message, Map<String, Object> details) {
-        return Map.of(
-            "error", error,
-            "message", message,
-            "details", details,
-            "timestamp", OffsetDateTime.now().toString()
-        );
+        // 用 LinkedHashMap 而不是 Map.of：
+        // 后者不保证遍历顺序，返回的 JSON 字段顺序会变，调试时看着难受
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("error", error);
+        m.put("message", message);
+        m.put("details", details);
+        m.put("timestamp", OffsetDateTime.now().toString());
+        return m;
     }
 }
 ```
+
+**为什么需要 `details` 这个字段**：有些错误前端要拿到额外信息才能正确处理。比如「文件已被外部修改」，前端需要拿到磁盘上的最新内容来做对比弹窗——那些内容就放在 `details` 里。
 
 **验证**：把 `LibraryController` 临时改成抛异常：
 
@@ -1688,20 +2013,122 @@ Content-Type: application/json
 
 ## 4.2 ULID 生成
 
-`02-library-format.md` 要求 ID 是 26 字符 ULID 带类型前缀。Hutool 自带 ULID：
+`02-library-format.md` 要求 ID 是 26 字符 ULID，带类型前缀（`lib_`、`ch_` 等）。
+
+#### 先说清楚 ULID 是什么
+
+**ULID** = Universally Unique Lexicographically Sortable Identifier，唯一且可按字典序排序的标识符。
+
+它把两个需求合到了一起：
+
+**需求一：唯一。** 不用数据库自增，也不用中心服务器分配号段——本地生成就不会撞。
+
+**需求二：能按时间排序。** 数据库的主键如果是随机的（比如 UUID），插入时索引会频繁重排，数据量大了很慢。ULID 的开头是时间戳，**越晚生成的 ULID 字典序越大**，插入时永远是往后追加。
+
+结构（26 个字符）：
+
+```
+01M2SHDZE8Y8MAZW13WSSP60WC
+└────┬────┘└──────┬──────┘
+  48位时间戳     80位随机数
+ （毫秒级）    （同一毫秒内不会重复）
+```
+
+前 10 个字符是时间戳的 Crockford Base32 编码，后 16 个是随机数。
+
+**Crockford Base32** 是一种编码方案，用 32 个字符（`0-9` 和去掉 `I L O U` 的字母）表示二进制数据。去掉那几个字母是因为它们容易和 `1 0` 混淆——这个 ID 可能被人念出来或手抄。
+
+#### 为什么自己写而不找现成的
+
+Hutool 5.8.x **没有** ULID 类（6.x 才加）。其他能用的库要么版本不匹配，要么引入一个只为一个功能的大依赖。
+
+而这个算法本身只有四十行，自己写更好控制。
+
+新建 `backend/src/main/java/com/yimo/common/Ids.java`：
 
 ```java
 package com.yimo.common;
 
-import cn.hutool.core.lang.ULID;
+import java.math.BigInteger;
+import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * ULID 生成器。
+ *
+ * <p>26 个字符，字典序等于时间序，可以直接用作数据库主键。
+ * 不带前缀时是纯 ULID；带上前缀（如 {@code ch_}）便于人眼辨认类型。
+ */
 public final class Ids {
 
-    private Ids() {}
+    /** Crockford Base32 的字符表。去掉了 I、L、O、U，它们容易和 1、0 混淆 */
+    private static final char[] CROCKFORD =
+            "0123456789ABCDEFGHJKMNPQRSTVWXYZ".toCharArray();
 
-    public static String generate(String prefix) {
-        return prefix + ULID.generate();
+    /** 编码用的基数。32 个字符，所以是 2 的 5 次方——每次处理 5 位 */
+    private static final BigInteger BASE = BigInteger.valueOf(32);
+
+    /** ULID 的长度固定 26 个字符 */
+    private static final int LENGTH = 26;
+
+    /**
+     * 私有构造函数。
+     *
+     * <p>这是个工具类，所有方法都是静态的，不需要创建实例。
+     * 加私有构造函数是为了防止别人 new 它——IDE 会直接报错。
+     */
+    private Ids() {
     }
+
+    /** 生成带前缀的 ID，比如 ch_01M2SHDZE8Y8MAZW13WSSP60WC */
+    public static String generate(String prefix) {
+        return prefix + ulid();
+    }
+
+    /**
+     * 生成一个纯 ULID（26 字符，无前缀）。
+     */
+    public static String ulid() {
+        long time = System.currentTimeMillis();
+
+        // 准备 16 字节（128 位）的数据：前 6 字节时间戳 + 后 10 字节随机数
+        byte[] data = new byte[16];
+
+        // 把 48 位的时间戳拆成 6 个字节。
+        // >>> 是无符号右移，从高位开始每 8 位取一个字节
+        for (int i = 0; i < 6; i++) {
+            data[i] = (byte) (time >>> (8 * (5 - i)));
+        }
+
+        // 后 10 字节填随机数，保证同一毫秒内生成的 ID 也不重复。
+        // ThreadLocalRandom 比 new Random() 快，且多线程下没有竞争
+        byte[] random = new byte[10];
+        ThreadLocalRandom.current().nextBytes(random);
+        System.arraycopy(random, 0, data, 6, 10);
+
+        return encode(data);
+    }
+
+    /**
+     * 把 16 字节编码成 26 个字符。
+     *
+     * <p>128 位除以每字符 5 位 = 25.6，向上取整就是 26 个字符。
+     * 多出来的 2 位补零，所以第 1 个字符的取值范围比后面小。
+     */
+    private static String encode(byte[] data) {
+        // BigInteger(1, data) 里的 1 表示「按无符号数解释」。
+        // 不传的话，最高位是 1 时会被当成负数
+        BigInteger value = new BigInteger(1, data);
+        char[] out = new char[LENGTH];
+
+        // 从最低位开始，每次取 5 位（相当于除以 32 取余）
+        for (int i = LENGTH - 1; i >= 0; i--) {
+            out[i] = CROCKFORD[value.mod(BASE).intValue()];
+            value = value.shiftRight(5);    // 右移 5 位 = 除以 32
+        }
+        return new String(out);
+    }
+
+    // ===== 按类型生成，前缀让 ID 一眼能看出是什么 =====
 
     public static String library() { return generate("lib_"); }
     public static String book()    { return generate("bk_"); }
@@ -1713,16 +2140,59 @@ public final class Ids {
 }
 ```
 
-**验证**：写个单元测试。
+#### 验证
+
+新建 `backend/src/test/java/com/yimo/common/IdsTest.java`：
 
 ```java
-@Test
-void ulidIsMonotonic() {
-    String a = Ids.chapter();
-    String b = Ids.chapter();
-    // 29 = 前缀 "ch_" 的 3 个字符 + ULID 本身的 26 个字符
-    assertThat(a).startsWith("ch_").hasSize(29);
-    assertThat(a.compareTo(b)).isLessThan(0);   // 单调递增，可按创建时间排序
+package com.yimo.common;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class IdsTest {
+
+    @Test
+    void hasCorrectLengthAndPrefix() {
+        String id = Ids.chapter();
+        // 29 = 前缀 "ch_" 的 3 个字符 + ULID 本身的 26 个字符
+        assertEquals(29, id.length());
+        assertTrue(id.startsWith("ch_"));
+    }
+
+    @Test
+    void isMonotonic() throws InterruptedException {
+        String a = Ids.chapter();
+        Thread.sleep(2);              // 等两毫秒，确保时间戳变了
+        String b = Ids.chapter();
+
+        // 后生成的字典序更大。这是 ULID 相对 UUID 的核心优势——
+        // 数据库插入时不用重排索引，也能直接按 id 排序当时间序用
+        assertTrue(a.compareTo(b) < 0, a + " 应该小于 " + b);
+    }
+
+    @Test
+    void isUniqueWithinSameMillisecond() {
+        // 同一毫秒内生成一万个，不应该有重复。
+        // 这验证的是随机数部分够不够随机
+        Set<String> ids = new HashSet<>();
+        for (int i = 0; i < 10_000; i++) {
+            ids.add(Ids.ulid());
+        }
+        assertEquals(10_000, ids.size());
+    }
+
+    @Test
+    void containsOnlyCrockfordChars() {
+        // 生成的 ID 里不能出现 I、L、O、U——这几个字符容易和数字混淆
+        String id = Ids.ulid();
+        assertTrue(id.matches("[0-9A-HJKMNP-TV-Z]{26}"), "出现了非法字符: " + id);
+    }
 }
 ```
 
