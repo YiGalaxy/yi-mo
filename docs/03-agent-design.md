@@ -65,6 +65,8 @@ public void proofread(Long chapterId) {
 不同任务对模型能力的要求差两个数量级，硬编码一个模型是浪费。
 
 ```java
+// 下面两个类各自独立成文件（Java 一个 .java 只能有一个 public 类）
+// TaskKind.java
 public enum TaskKind {
     PROOFREAD,      // 错字语病
     EXTRACT,        // 实体抽取
@@ -75,6 +77,7 @@ public enum TaskKind {
     CHAT            // 对话
 }
 
+// ModelProfile.java
 public record ModelProfile(String name, Map<TaskKind, String> routes) {}
 ```
 

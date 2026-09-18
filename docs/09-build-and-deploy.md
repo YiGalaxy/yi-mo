@@ -640,6 +640,8 @@ echo "完成：dist/yimo-v$VERSION.zip"
 差异通过接口隔离：
 
 ```java
+// 三个类各自独立成文件（Java 一个 .java 只能有一个 public 类）
+
 public interface SearchProvider {
     List<SearchHit> search(String libraryId, String query, int limit);
 }
@@ -652,6 +654,8 @@ public class MysqlSearchProvider implements SearchProvider { /* ngram */ }
 @ConditionalOnProperty(name = "yimo.database", havingValue = "sqlite", matchIfMissing = true)
 public class SqliteSearchProvider implements SearchProvider { /* FTS5 */ }
 ```
+
+`@ConditionalOnProperty` 让 Spring 按配置决定实例化哪个实现——配了 `yimo.database=mysql` 就用 MySQL 版，否则用 SQLite 版。业务代码只依赖 `SearchProvider` 接口，不关心底下是谁。
 
 SQLite 的中文分词处理：FTS5 的 `unicode61` 对中文按单字切分，搜「陈平安」变成「陈 AND 平 AND 安」，召回高、精度低。检索后再用 `indexOf` 在结果里精确验证一遍即可。
 

@@ -1788,25 +1788,207 @@ void blocksPathTraversal() {
 
 ## 迭代 1：书库管理
 
-**目标**：能添加一个文件夹作为书库，列表里能看到，能移除。
+### 做完是什么样
+
+```
+┌────────────────────────────────┐
+│  书库              [+ 添加书库] │
+├────────────────────────────────┤
+│  我的小说                       │
+│  D:\Writing\我的小说      [移除]│
+└────────────────────────────────┘
+```
+
+点「添加书库」弹窗，可以手填路径，也可以点「浏览…」调系统窗口选。关掉浏览器重开，书库还在。
+
+### 为什么第一个做这个
+
+三个理由：
+
+**它是所有功能的前置。** 没有书库，章节、批注、知识库全都无从谈起。
+
+**它是完整链路的最小样本。** 前端表单 → HTTP 请求 → 后端处理 → 数据库 → 返回 → 前端渲染，这条链路跑通一次，后面所有功能都是在这个骨架上加东西。
+
+**它没有技术难点。** 不涉及富文本、文件解析、AI、并发。你能把全部注意力放在「理解前后端怎么对上」，而不是同时跟五个问题搏斗。
+
+对比一下，为什么不是别的：
+
+| 候选 | 为什么不是第一个 |
+|---|---|
+| 编辑器 | 富文本 + Markdown 往返 + 输入法，三个难点叠在一起，出问题分不清是谁的锅 |
+| AI 校对 | 依赖书库、章节、批注、模型配置，前置太多 |
+| 文件扫描 | frontmatter 解析、类型推断、编码/BOM，够写一天 |
+
+### 这一段会碰到的新概念
+
+| 概念 | 一句话说明 |
+|---|---|
+| 分层架构 | Controller / Service / Mapper 三层各管一摊，混在一起后期没法维护 |
+| DTO | 专门用来在前后端之间传数据的类，不参与数据库操作 |
+| `record` | Java 14+ 的不可变数据载体，一行顶一个完整类 |
+| MyBatis-Plus | 让数据库操作不用手写 SQL 的框架 |
+| REST 风格 | 用 HTTP 方法（GET/POST/DELETE）表达「要做什么」的接口设计方式 |
+
+---
 
 ### 后端
 
-**1. DTO**（`com/yimo/dto/`）
+后端要写三个文件，它们分属三层，职责不同：
+
+```
+Controller  ← 收 HTTP 请求，返回 HTTP 响应。只做转发，不写业务逻辑
+    ↓
+Service     ← 业务逻辑都在这里：校验、组装、事务
+    ↓
+Mapper      ← 只跟数据库打交道，一个方法对应一类 SQL
+```
+
+**为什么非要分三层？** 因为它们的「变化原因」不同：
+
+- 前端要改接口格式 → 改 Controller
+- 业务规则变了（比如「同一个目录不能重复添加」）→ 改 Service
+- 换数据库或者改表结构 → 改 Mapper
+
+如果全塞在一个类里，改任何一样都要动同一个文件，改完还得把不相关的部分重新测一遍。分开之后，改哪层测哪层。
+
+现在最开始的三个文件是：DTO（两层都要用，单独放一个包）、Service、Controller。
+
+#### 1. 定义 DTO
+
+**DTO 是什么**：Data Transfer Object，数据传输对象。它专门用来在前后端之间传数据，**不参与数据库操作**。
+
+**为什么不直接用 `Library` 实体当接口的出入参**：
+
+| 直接用实体 | 用 DTO |
+|---|---|
+| 表加个字段，接口返回跟着变，前端可能因此报错 | 返回什么是明确的契约，加字段不影响前端 |
+| 数据库的所有字段都暴露给前端 | 只暴露前端需要的 |
+| 将来加了内部字段（比如缓存的索引路径），容易误传出去 | 想传什么写什么 |
+
+举个具体的：`Library` 实体有 `lastOpened`（上次打开时间），列表接口暂时用不上。用 DTO 就可以不返回。
+
+**两个方向要分开定义**：
+
+- `LibraryCreateRequest` —— 前端**发给后端**的数据。创建书库时需要什么？路径、可选的名字。就这两个。
+- `LibraryView` —— 后端**返回给前端**的数据。前端要显示什么？id、名字、路径、书籍数、字数、时间。
+
+**命名习惯**：进来的叫 `XxxRequest`，出去叫 `XxxView` 或 `XxxResponse`。
+
+**为什么用 `record` 不用 `class`**：
+
+`record` 是 Java 14 引入的**不可变数据载体**。看这一行：
 
 ```java
 public record LibraryCreateRequest(String path, String name) {}
-
-public record LibraryView(
-    String id, String name, String path,
-    int bookCount, long wordCount,
-    OffsetDateTime lastOpenedAt, OffsetDateTime createdAt
-) {}
 ```
 
-**2. Service**（`com/yimo/service/LibraryService.java`）
+编译器会自动生成：
+
+- 两个 `private final` 字段
+- 一个全参构造函数
+- 两个读取方法（注意是 `path()` 和 `name()`，**没有 get 前缀**）
+- `equals` / `hashCode` / `toString`
+
+手写这些要四十多行。
+
+**关键在「不可变」**：字段是 final 的，构造完就不能改。这对 DTO 正合适——它就是一次性传值的容器。
+
+而实体类需要可变（MyBatis 从数据库读数据时要往里面填），所以那边用普通类加 Lombok 的 `@Data`。
+
+**记住这个分工**：
+
+| | 用途 | 写法 | 为什么 |
+|---|---|---|---|
+| DTO | 前后端传值 | `record` | 不可变，传完就丢 |
+| 实体 | 对应数据库表 | `class` + `@Data` | 要能被 MyBatis 填充 |
+
+**开始写代码**。
+
+新建 `backend/src/main/java/com/yimo/dto/LibraryCreateRequest.java`：
 
 ```java
+package com.yimo.dto;
+
+import jakarta.validation.constraints.NotBlank;
+
+/**
+ * 添加书库的请求。
+ *
+ * @param path 文件夹的绝对路径，必填
+ * @param name 显示名，不填则取文件夹名
+ */
+public record LibraryCreateRequest(
+        @NotBlank(message = "路径不能为空") String path,
+        String name
+) {
+}
+```
+
+`@NotBlank` 是校验注解，配合 Controller 上的 `@Valid` 使用——路径为空时 Spring 会自动返回 400，不用你手写 if 判断。
+
+新建 `backend/src/main/java/com/yimo/dto/LibraryView.java`：
+
+```java
+package com.yimo.dto;
+
+import java.time.OffsetDateTime;
+
+/**
+ * 书库的展示数据。
+ *
+ * @param bookCount   书籍数，暂时固定为 0（迭代 2 扫描后才有值）
+ * @param wordCount   总字数，同上
+ * @param lastOpenedAt 上次打开时间，可能为 null
+ */
+public record LibraryView(
+        String id,
+        String name,
+        String path,
+        int bookCount,
+        long wordCount,
+        OffsetDateTime lastOpenedAt,
+        OffsetDateTime createdAt
+) {
+}
+```
+
+**注意时间字段的类型**：这里用的是 `OffsetDateTime`（带时区偏移），而实体里是 `LocalDateTime`（不带时区）。
+
+为什么要换？`LocalDateTime` 转成 JSON 是一串 `2026-09-18T17:18:34`——前端拿到不知道这是哪个时区的时间。`OffsetDateTime` 会输出 `2026-09-18T17:18:34+08:00`，带上了 `+08:00`，前端就能正确显示。
+
+转换在 Service 里做，下一步会看到。
+
+#### 2. 写 Service
+
+**Service 层做什么**：所有业务逻辑。校验、查重、组装数据、决定要不要报错——都在这。
+
+**为什么 Controller 不直接调 Mapper**：
+
+假设前端直接调 Mapper，那么「同一个目录不能重复添加」这条规则就得写在 Controller 里。将来如果加一个「批量导入书库」的功能，它也得自己去查重——同一条规则写两遍，改的时候容易漏掉一处。
+
+放在 Service 里，规则只有一份，谁要用谁调。
+
+新建 `backend/src/main/java/com/yimo/service/LibraryService.java`：
+
+```java
+package com.yimo.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.yimo.common.BizException;
+import com.yimo.common.ErrorCode;
+import com.yimo.common.Ids;
+import com.yimo.domain.Library;
+import com.yimo.dto.LibraryCreateRequest;
+import com.yimo.dto.LibraryView;
+import com.yimo.mapper.LibraryMapper;
+import org.springframework.stereotype.Service;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
+
 @Service
 public class LibraryService {
 
@@ -1817,26 +1999,31 @@ public class LibraryService {
     }
 
     public LibraryView create(LibraryCreateRequest req) {
+        // 1. 规范化路径：转成绝对路径，并解析掉 . 和 ..
         Path path = Path.of(req.path()).toAbsolutePath().normalize();
 
+        // 2. 校验：必须是存在且可读的目录
         if (!Files.isDirectory(path)) {
             throw new BizException(ErrorCode.LIBRARY_PATH_INVALID, "目录不存在: " + path);
         }
         if (!Files.isReadable(path)) {
             throw new BizException(ErrorCode.LIBRARY_PATH_INVALID, "目录不可读: " + path);
         }
+
+        // 3. 查重：同一个目录不能添加两次
         Long exists = libraryMapper.selectCount(
-            new LambdaQueryWrapper<Library>().eq(Library::getPath, path.toString()));
+                new LambdaQueryWrapper<Library>().eq(Library::getPath, path.toString()));
         if (exists > 0) {
             throw new BizException(ErrorCode.LIBRARY_PATH_DUPLICATE);
         }
 
+        // 4. 组装实体并入库
         Library lib = new Library();
         lib.setId(Ids.library());
         lib.setPath(path.toString());
         lib.setName(req.name() != null && !req.name().isBlank()
-            ? req.name()
-            : path.getFileName().toString());
+                ? req.name()
+                : path.getFileName().toString());
         lib.setCreatedAt(LocalDateTime.now());
         libraryMapper.insert(lib);
 
@@ -1845,27 +2032,100 @@ public class LibraryService {
 
     public List<LibraryView> list() {
         return libraryMapper.selectList(
-            new LambdaQueryWrapper<Library>().orderByDesc(Library::getLastOpened))
-            .stream().map(this::toView).toList();
+                        new LambdaQueryWrapper<Library>().orderByDesc(Library::getLastOpened))
+                .stream().map(this::toView).toList();
     }
 
     public void remove(String id) {
         Library lib = libraryMapper.selectById(id);
-        if (lib == null) throw new BizException(ErrorCode.LIBRARY_NOT_FOUND);
+        if (lib == null) {
+            throw new BizException(ErrorCode.LIBRARY_NOT_FOUND);
+        }
         // 只删数据库记录，磁盘文件一个字不动
         libraryMapper.deleteById(id);
     }
 
+    /** 实体 → DTO。时间字段顺带转换时区 */
     private LibraryView toView(Library lib) {
-        return new LibraryView(lib.getId(), lib.getName(), lib.getPath(),
-            0, 0, lib.getLastOpened(), lib.getCreatedAt());
+        return new LibraryView(
+                lib.getId(),
+                lib.getName(),
+                lib.getPath(),
+                0,      // bookCount，迭代 2 扫描后才有值
+                0,      // wordCount，同上
+                toOffset(lib.getLastOpened()),
+                toOffset(lib.getCreatedAt()));
+    }
+
+    private OffsetDateTime toOffset(LocalDateTime time) {
+        return time == null ? null : time.atZone(ZoneId.systemDefault()).toOffsetDateTime();
     }
 }
 ```
 
-**3. Controller**
+**逐段看几个地方**：
+
+**`@Service` 是什么**：告诉 Spring「这个类由你管理」。Spring 启动时发现它，创建一个实例放进容器。别的地方需要 `LibraryService` 时，Spring 会自动把它塞进构造函数——这叫**依赖注入**。
+
+**为什么用构造函数注入而不是 `@Autowired` 字段注入**：
 
 ```java
+// 推荐：构造函数注入
+private final LibraryMapper libraryMapper;
+
+public LibraryService(LibraryMapper libraryMapper) {
+    this.libraryMapper = libraryMapper;
+}
+```
+
+```java
+// 不推荐：字段注入
+@Autowired
+private LibraryMapper libraryMapper;
+```
+
+构造函数注入的好处：字段可以是 `final`（创建后不能改），而且**缺依赖时启动就报错**，不会拖到运行时才炸。
+
+**`LambdaQueryWrapper` 是什么**：MyBatis-Plus 提供的查询条件构造器。这一句：
+
+```java
+new LambdaQueryWrapper<Library>().eq(Library::getPath, path.toString())
+```
+
+等价于 SQL 的 `WHERE path = '...'`。
+
+用 `Library::getPath` 而不是写字符串 `"path"` 的好处：**改字段名时编译器会报错**。写成字符串的话，字段改名了，这里还静静地跑着，直到查询出错才发现。
+
+**为什么要 `.toAbsolutePath().normalize()`**：用户输入 `D:/Writing/../Writing/小说` 时，规范化之后变成 `D:/Writing/小说`，这样查重才能正确判断是不是同一个目录。
+
+**`orderByDesc(Library::getLastOpened)`**：按最近打开时间倒序。列表里最近用过的书库排最前面。
+
+#### 3. 写 Controller
+
+**Controller 只做三件事**：接请求、调 Service、返回结果。不写业务逻辑。
+
+新建 `backend/src/main/java/com/yimo/controller/LibraryController.java`：
+
+```java
+package com.yimo.controller;
+
+import com.yimo.dto.LibraryCreateRequest;
+import com.yimo.dto.LibraryView;
+import com.yimo.service.LibraryService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/libraries")
 public class LibraryController {
@@ -1876,33 +2136,159 @@ public class LibraryController {
         this.libraryService = libraryService;
     }
 
+    /** GET /api/libraries —— 列出所有书库 */
     @GetMapping
     public List<LibraryView> list() {
         return libraryService.list();
     }
 
+    /** POST /api/libraries —— 添加书库 */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public LibraryView create(@RequestBody @Valid LibraryCreateRequest req) {
         return libraryService.create(req);
     }
 
+    /** DELETE /api/libraries/{id} —— 移除书库 */
     @DeleteMapping("/{id}")
     public Map<String, Object> remove(@PathVariable String id) {
         libraryService.remove(id);
+        // 显式告诉前端：只从列表里移除了，磁盘文件一个字没动
         return Map.of("id", id, "removed", true, "filesDeleted", false);
     }
 }
 ```
 
-`@Valid` 配上 DTO 里的 `@NotBlank` 做参数校验：
+**注解逐个说**：
+
+| 注解 | 作用 |
+|---|---|
+| `@RestController` | 这个类是处理 HTTP 请求的，返回值自动转成 JSON |
+| `@RequestMapping("/api/libraries")` | 类里所有接口的 URL 都以这个开头 |
+| `@GetMapping` | 处理 GET 请求 |
+| `@PostMapping` | 处理 POST 请求 |
+| `@DeleteMapping("/{id}")` | 处理 DELETE 请求，`{id}` 是路径参数 |
+| `@RequestBody` | 把请求体里的 JSON 转成 Java 对象 |
+| `@PathVariable` | 把 URL 里的 `{id}` 取出来赋给参数 |
+| `@Valid` | 触发 DTO 上的校验注解（比如 `@NotBlank`） |
+| `@ResponseStatus(CREATED)` | 成功时返回 201 而不是默认的 200 |
+
+**为什么用 REST 风格**：URL 表示「资源」，HTTP 方法表示「对它做什么」。
+
+```
+GET    /api/libraries        列出
+POST   /api/libraries        新建
+DELETE /api/libraries/{id}   删除
+```
+
+对比另一种常见写法 `POST /api/getLibraryList`、`POST /api/deleteLibrary`——后者把动作写在 URL 里，是早期风格。REST 风格的好处是**语义清晰**：看方法就知道会不会修改数据，能不能被缓存、能不能重试都有明确规则。
+
+**`@ResponseStatus(HttpStatus.CREATED)`**：创建成功时返回 201 而不是 200。这是 HTTP 语义——201 表示「资源被创建了」，前端可以据此判断。
+
+**删除接口为什么返回一个 Map 而不是空**：因为要明确告诉前端「磁盘文件没删」。
+
+```java
+Map.of("id", id, "removed", true, "filesDeleted", false)
+```
+
+这个字段很重要。用户看到「移除」两个字会担心文件被删了，接口返回 `filesDeleted: false`，前端就能显示「已移除（磁盘文件未删除）」。
+
+**注意 `@Valid` 的写法**：它放在 `@RequestBody` 后面，触发的是 DTO 里的校验注解：
 
 ```java
 public record LibraryCreateRequest(
-    @NotBlank(message = "路径不能为空") String path,
-    String name
-) {}
+        @NotBlank(message = "路径不能为空") String path,
+        String name
+) {
+}
 ```
+
+路径为空时，Spring 自动返回 400 和错误信息，不用你写 if 判断。**校验规则写在数据定义旁边**，而不是散落在业务代码里。
+
+#### 4. 验证后端
+
+启动后端：
+
+```bash
+cd D:/Project/yi-mo/backend
+mvn spring-boot:run
+```
+
+**测列表**（另开一个终端）：
+
+```bash
+curl http://127.0.0.1:18080/api/libraries
+```
+
+预期返回一个 JSON 数组（可能为空 `[]`）。
+
+**测创建**：
+
+```bash
+curl -X POST http://127.0.0.1:18080/api/libraries \
+  -H "Content-Type: application/json" \
+  -d '{"path":"D:/Project/yi-mo/test-library"}'
+```
+
+先建一个空目录当测试用：
+
+```bash
+mkdir -p D:/Project/yi-mo/test-library
+```
+
+预期返回：
+
+```json
+{"id":"lib_01M2...","name":"test-library","path":"D:\\Project\\yi-mo\\test-library","bookCount":0,"wordCount":0,"lastOpenedAt":null,"createdAt":"2026-09-18T20:30:00+08:00"}
+```
+
+**`createdAt` 带 `+08:00`**——这就是前面用 `OffsetDateTime` 的效果。
+
+**测重复添加**：
+
+```bash
+curl -X POST http://127.0.0.1:18080/api/libraries \
+  -H "Content-Type: application/json" \
+  -d '{"path":"D:/Project/yi-mo/test-library"}'
+```
+
+预期 409 和「该路径已添加过」。
+
+**测路径不存在**：
+
+```bash
+curl -X POST http://127.0.0.1:18080/api/libraries \
+  -H "Content-Type: application/json" \
+  -d '{"path":"D:/不存在的目录"}'
+```
+
+预期 400 和「目录不存在」。
+
+**测路径为空**：
+
+```bash
+curl -X POST http://127.0.0.1:18080/api/libraries \
+  -H "Content-Type: application/json" \
+  -d '{"path":""}'
+```
+
+预期 400 和「path: 路径不能为空」——这就是 `@Valid` + `@NotBlank` 的效果。
+
+**测删除**：
+
+```bash
+curl -X DELETE http://127.0.0.1:18080/api/libraries/<刚才返回的id>
+```
+
+预期：
+
+```json
+{"id":"lib_01M2...","removed":true,"filesDeleted":false}
+```
+
+**然后去文件管理器看 `D:/Project/yi-mo/test-library` 还在不在**。在，就说明「移除只是移除记录，不碰文件」这条守住了。
+
+**这几个 curl 命令建议存成一个文件**，改代码后挨个跑一遍。后面的迭代会越加越多，手工测很容易漏。
 
 ### 前端
 
@@ -2075,12 +2461,35 @@ PICKER_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "打开选择窗口失败"),
 
 **第 2 步：DTO**
 
-```java
-// PickDirectoryRequest.java
-public record PickDirectoryRequest(String initialPath) {}
+**两个类，两个文件**（Java 里一个 `.java` 文件只能有一个 `public` 类）。
 
-// PickDirectoryResponse.java
-public record PickDirectoryResponse(boolean picked, String path) {}
+新建 `backend/src/main/java/com/yimo/dto/PickDirectoryRequest.java`：
+
+```java
+package com.yimo.dto;
+
+/**
+ * 弹出目录选择窗口的请求。
+ *
+ * @param initialPath 窗口打开时定位到哪个目录，可为 null（则用系统默认位置）
+ */
+public record PickDirectoryRequest(String initialPath) {
+}
+```
+
+新建 `backend/src/main/java/com/yimo/dto/PickDirectoryResponse.java`：
+
+```java
+package com.yimo.dto;
+
+/**
+ * 目录选择窗口的返回。
+ *
+ * @param picked 用户是否选了目录（点取消则为 false）
+ * @param path   选中的绝对路径，未选中时为 null
+ */
+public record PickDirectoryResponse(boolean picked, String path) {
+}
 ```
 
 `picked` 是给「用户点了取消」准备的——取消不是错误，返回 `picked: false` 就行。
@@ -2329,39 +2738,230 @@ CREATE TABLE chapter (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-**2. Frontmatter 解析器**（`com/yimo/storage/FrontmatterCodec.java`）
+**2. Frontmatter 解析器**
 
-按 `07-implementation.md` §3 实现。核心是那个正则 + SnakeYAML。
+#### 先说清楚 frontmatter 是什么
 
-先只实现读，写留到迭代 4。
+书稿的 `.md` 文件长这样：
+
+```markdown
+---
+yimo: chapter
+id: ch_01H8XYZ
+title: 第一章 雪夜
+volume: 第一卷 少年游
+order: 1
+---
+
+　　他站在城头，看雪落下来。
+```
+
+开头被两行 `---` 夹住的那部分叫 **frontmatter**，里面是 YAML 格式的元数据。这是 Jekyll、Hugo、Obsidian 等工具通用的约定。
+
+**为什么需要它**：Markdown 本身只能表达「哪些字加粗了」这类排版信息，没法表达「这一章属于哪一卷、序号是几、出场了哪些人物」。这些结构化字段得另找地方放。
+
+三个选择：
+
+| 方案 | 问题 |
+|---|---|
+| 另建一个 JSON 文件存元数据 | 两份数据必然不同步——md 删了 JSON 还在，改了一边另一边不知道 |
+| 把元数据放数据库 | 作者的文件夹拷到别的电脑就丢了元数据，也不能用 Typora 打开 |
+| **写在文件头部的 frontmatter** | 元数据和正文同生共死，任何 Markdown 编辑器都能打开，Git 能对比 |
+
+选第三个。这也是 `02-library-format.md` 里「明文优先」原则的具体体现。
+
+#### 为什么解析比看起来麻烦
+
+**坑一：Windows 记事本存的 UTF-8 文件带 BOM**
+
+BOM 是文件开头三个看不见的字节（十六进制 `EF BB BF`）。带 BOM 的文件，实际内容是：
+
+```
+﻿---
+yimo: chapter
+```
+
+开头的 `---` 前面多了个字符，正则的 `^---` 就匹配不上。结果是**整份文件被当成没有元数据**——章节标题、序号、卷名全丢。
+
+所以 `stripBom()` 是必须的，不是可有可无的优化。
+
+**坑二：字段顺序不能乱**
+
+解析结果要存进 Map。如果用 `HashMap`，遍历顺序每次可能不同——写回文件时字段顺序跟着变，作者的 Git 里会出现一堆「只调换了字段顺序」的无意义 diff。
+
+用 `LinkedHashMap`，它保持插入顺序。
+
+**坑三：可能压根没有 frontmatter**
+
+作者直接写了个 `.md` 丢进来，没有元数据头。这时候不能报错——返回空的 frontmatter，让上层按目录和文件名推断类型（`02-library-format.md` 定义了这套推断规则）。
+
+#### 写代码
+
+**这里是两个类，必须放在两个文件里。**
+
+Java 的规则：**一个 `.java` 文件只能有一个 `public` 类，且文件名必须和这个 public 类同名**。写在一个文件里编译不过。
+
+**文件一**：`backend/src/main/java/com/yimo/storage/ParsedMarkdown.java`
 
 ```java
+package com.yimo.storage;
+
+import java.util.Map;
+
+/**
+ * 解析后的 Markdown：元数据 + 正文。
+ *
+ * @param frontmatter 文件头部的 YAML 字段。没有 frontmatter 时是空 Map（不是 null）
+ * @param body        去掉 frontmatter 之后的正文
+ */
+public record ParsedMarkdown(Map<String, Object> frontmatter, String body) {
+}
+```
+
+**文件二**：`backend/src/main/java/com/yimo/storage/FrontmatterCodec.java`
+
+```java
+package com.yimo.storage;
+
+import org.springframework.stereotype.Component;
+import org.yaml.snakeyaml.Yaml;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * 读写 Markdown 的 frontmatter。
+ *
+ * <p>这一版只实现「读」，写回留到迭代 4（保存正文）时再做。
+ */
 @Component
 public class FrontmatterCodec {
 
+    /**
+     * 匹配文件开头的 frontmatter 块。
+     *
+     * ^---\s*\r?\n      开头的 --- 加换行（\r? 兼容 Windows 的 CRLF）
+     * (.*?)             中间的内容，非贪婪，所以只吃到第一个结尾的 ---
+     * \r?\n---\s*\r?\n? 结尾的 --- 加换行
+     *
+     * DOTALL 让点号能匹配换行符，否则中间的多行内容匹配不到
+     */
     private static final Pattern FM = Pattern.compile(
-        "^---\\s*\\r?\\n(.*?)\\r?\\n---\\s*\\r?\\n?", Pattern.DOTALL);
+            "^---\\s*\\r?\\n(.*?)\\r?\\n---\\s*\\r?\\n?", Pattern.DOTALL);
 
     private final Yaml yaml = new Yaml();
 
     public ParsedMarkdown parse(String raw) {
         String text = stripBom(raw);
+
         Matcher m = FM.matcher(text);
         if (!m.find()) {
+            // 没有 frontmatter：返回空元数据 + 全部内容当正文
             return new ParsedMarkdown(new LinkedHashMap<>(), text);
         }
+
         Map<String, Object> fm = yaml.load(m.group(1));
+
+        // 只有一行 --- 时 yaml.load 返回 null，兜底成空 Map。
+        // 再包一层 LinkedHashMap 是保险：SnakeYAML 返回的类型不保证有序
         return new ParsedMarkdown(
-            fm != null ? new LinkedHashMap<>(fm) : new LinkedHashMap<>(),
-            text.substring(m.end()));
+                fm != null ? new LinkedHashMap<>(fm) : new LinkedHashMap<>(),
+                text.substring(m.end()));
     }
 
+    /**
+     * 剥掉 UTF-8 BOM。
+     *
+     * 不剥的话，开头的 --- 会变成「BOM + ---」，正则匹配失败，
+     * 整份文件被误判成没有元数据。
+     */
     private String stripBom(String s) {
         return s.startsWith("\uFEFF") ? s.substring(1) : s;
     }
 }
+```
 
-public record ParsedMarkdown(Map<String, Object> frontmatter, String body) {}
+**`@Component` 是什么**：跟 Service 上的 `@Service` 一样，告诉 Spring「这个类交给你管」。区别只是语义——`@Service` 表示业务层，`@Component` 表示通用组件。功能上等价，Spring 都会创建实例并管理依赖。
+
+**`Yaml` 从哪来**：Spring Boot 的依赖里已经带了 SnakeYAML（Spring 自己用它读配置文件），不用额外加依赖。
+
+#### 验证
+
+写单元测试比手工测快，而且能覆盖那些「手工想不到」的边界情况。
+
+新建 `backend/src/test/java/com/yimo/storage/FrontmatterCodecTest.java`：
+
+```java
+package com.yimo.storage;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class FrontmatterCodecTest {
+
+    private final FrontmatterCodec codec = new FrontmatterCodec();
+
+    @Test
+    void parsesNormalFrontmatter() {
+        String raw = """
+                ---
+                title: 第一章 雪夜
+                order: 1
+                ---
+
+                　　正文内容
+                """;
+
+        ParsedMarkdown pm = codec.parse(raw);
+
+        assertEquals("第一章 雪夜", pm.frontmatter().get("title"));
+        assertEquals(1, pm.frontmatter().get("order"));
+        assertTrue(pm.body().contains("正文内容"));
+    }
+
+    @Test
+    void handlesFileWithoutFrontmatter() {
+        String raw = "　　这是一份没有元数据的文件。";
+
+        ParsedMarkdown pm = codec.parse(raw);
+
+        assertTrue(pm.frontmatter().isEmpty());
+        assertEquals(raw, pm.body());
+    }
+
+    @Test
+    void handlesBomFromNotepad() {
+        // 用记事本打开任意 md 文件，加个空格再保存，就会带上 BOM
+        String raw = "\uFEFF---\ntitle: 带 BOM 的文件\n---\n\n正文";
+
+        ParsedMarkdown pm = codec.parse(raw);
+
+        // 没有 stripBom 的话，这里会是 null（正则匹配失败）
+        assertEquals("带 BOM 的文件", pm.frontmatter().get("title"));
+    }
+
+    @Test
+    void handlesCrlfLineEnding() {
+        String raw = "---\r\ntitle: Windows 换行\r\n---\r\n\r\n正文";
+
+        ParsedMarkdown pm = codec.parse(raw);
+
+        assertEquals("Windows 换行", pm.frontmatter().get("title"));
+    }
+}
+```
+
+**第三条测试（BOM）是重点**。它验证的正是前面说的那个坑——你拿记事本随手存一下任意 `.md`，就会触发这个场景。没有这条测试，那个 bug 会一直潜伏到某个作者用记事本改了稿子才爆发。
+
+**跑测试**：
+
+```bash
+cd D:/Project/yi-mo/backend
+mvn test -Dtest=FrontmatterCodecTest
 ```
 
 **3. 扫描服务**（`com/yimo/service/ScanService.java`）
@@ -2745,23 +3345,99 @@ export function selfCheck(md: string): string[] {
 
 ### 后端
 
-**1. 规则接口**（`src/main/java/com/yimo/rules/`）
+**1. 规则接口**
+
+**四个类，四个文件**（Java 里一个 `.java` 文件只能有一个 `public` 类）。都放在 `backend/src/main/java/com/yimo/rules/` 下。
+
+`Severity.java`：
 
 ```java
+package com.yimo.rules;
+
+/** 问题严重程度，决定波浪线的颜色 */
+public enum Severity {
+    /** 确定是错的，比如错别字 */
+    ERROR,
+    /** 可能有问题，比如语病 */
+    WARNING,
+    /** 只是建议 */
+    INFO
+}
+```
+
+`RuleIssue.java`：
+
+```java
+package com.yimo.rules;
+
+import java.util.List;
+
+/**
+ * 一条规则命中的结果。
+ *
+ * @param start       问题文本在章节里的起始位置（字符偏移）
+ * @param end         结束位置
+ * @param message     给作者看的问题说明
+ * @param suggestions 候选替换文本，可以为空
+ * @param confidence  置信度 0-1，低于 0.6 的会在界面上弱化显示
+ */
+public record RuleIssue(
+        int start,
+        int end,
+        String message,
+        List<String> suggestions,
+        double confidence
+) {
+}
+```
+
+`RuleContext.java`：
+
+```java
+package com.yimo.rules;
+
+/**
+ * 规则执行时能拿到的上下文。
+ *
+ * <p>有些规则需要知道章节之外的信息——比如「他/她混用」要判断指代的是谁，
+ * 得查出场人物表。这些东西通过这里传进来。
+ *
+ * <p>现在先留空，需要时再加字段。
+ */
+public record RuleContext(String chapterId) {
+}
+```
+
+`Rule.java`：
+
+```java
+package com.yimo.rules;
+
+import java.util.List;
+
+/**
+ * 一条校对规则。
+ *
+ * <p>实现类必须是纯函数——不碰数据库、不读文件、不调网络。
+ * 这样它能被独立单元测试，也能安全地在多线程里跑。
+ */
 public interface Rule {
+
+    /** 规则唯一标识，用于「这条规则我不想看」的忽略记录 */
     String id();
+
+    /** 规则说明，显示在设置页的规则列表里 */
     String description();
+
+    /** 命中时默认的严重程度 */
     Severity defaultSeverity();
+
+    /** 默认是否开启。误报率高的规则默认关掉 */
     boolean defaultEnabled();
+
+    /** 检查文本，返回所有命中的问题 */
     List<RuleIssue> check(String text, RuleContext ctx);
 }
-
-public record RuleIssue(
-    int start, int end,
-    String message,
-    List<String> suggestions,
-    double confidence
-) {}
 ```
 
 **2. 先实现三条最简单、最不会误报的**

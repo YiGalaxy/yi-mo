@@ -517,6 +517,8 @@ function relocate(doc: Node, anchor: Anchor): { from: number, to: number } | nul
 ### 设计约束
 
 ```java
+// 两个类各自独立成文件（Java 一个 .java 只能有一个 public 类）
+
 @FunctionalInterface
 public interface Rule {
     String id();
